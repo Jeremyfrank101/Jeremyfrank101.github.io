@@ -18,6 +18,7 @@ const App = {
             PatternEngine.init();
             this.render();
         } else {
+            Game.unmount();
             this.prefillDevCredentials();
         }
     },
@@ -142,6 +143,11 @@ const App = {
         const selfContainedTab = this.currentFilter === 'info' || this.currentFilter === 'game';
         emptyState.classList.toggle('hidden', !isEmpty || selfContainedTab);
 
+        // A running game owns a live WebGL canvas inside #list-container. Modals
+        // call render() when they close, and rebuilding the container would throw
+        // away the player's run, so leave it alone while it is playing.
+        if (this.currentFilter === 'game' && Game.isLive()) return;
+
         let html = '';
         switch (this.currentFilter) {
             case 'all': html = Views.renderAll(); break;
@@ -152,6 +158,11 @@ const App = {
             case 'info': html = Views.renderInfo(); break;
         }
         container.innerHTML = html;
+
+        // The game owns a WebGL context and a render loop, so it has to be told
+        // when its container appears and when it is torn down by the line above.
+        if (this.currentFilter === 'game') Game.mount();
+        else Game.unmount();
     }
 };
 

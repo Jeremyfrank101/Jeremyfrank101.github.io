@@ -27,7 +27,7 @@ const Store = {
     },
 
     _default() {
-        return { user: null, rooms: [], items: [], projects: [], diyItems: [], theme: 'California Cabana', gameBest: 0 };
+        return { user: null, rooms: [], items: [], projects: [], diyItems: [], theme: 'California Cabana' };
     },
 
     // ---------- Auth ----------
@@ -73,17 +73,6 @@ const Store = {
         const data = this._load();
         data.theme = name;
         this._save(data);
-    },
-
-    // ---------- Game ----------
-
-    getGameBest() {
-        return this._load().gameBest || 0;
-    },
-
-    setGameBest(score) {
-        const data = this._load();
-        if (score > (data.gameBest || 0)) { data.gameBest = score; this._save(data); }
     },
 
     // ---------- Rooms ----------
@@ -258,7 +247,6 @@ const Store = {
         data.projects = [];
         data.diyItems = [];
         data.user = null;
-        data.gameBest = 0;
         this._save(data);
     }
 };
