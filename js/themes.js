@@ -98,9 +98,11 @@ const ThemeEngine = {
         r.setProperty('--accent-secondary', `rgb(${t.accentSecondary})`);
         r.setProperty('--accent-secondary-rgb', t.accentSecondary.join(','));
         r.setProperty('--completed', `rgb(${t.completed})`);
+        r.setProperty('--completed-rgb', t.completed.join(','));
         r.setProperty('--budget', `rgb(${t.budget})`);
         r.setProperty('--warning', `rgb(${t.warning})`);
         r.setProperty('--danger', `rgb(${t.danger})`);
+        r.setProperty('--danger-rgb', t.danger.join(','));
         r.setProperty('--card-bg', `rgb(${t.cardBg})`);
         r.setProperty('--page-bg', `rgb(${t.pageBg})`);
         r.setProperty('--header-grad-start', t.headerGrad[0]);

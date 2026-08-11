@@ -17,7 +17,16 @@ const App = {
         if (user) {
             PatternEngine.init();
             this.render();
+        } else {
+            this.prefillDevCredentials();
         }
+    },
+
+    // DEV ONLY: fills the sign-in form with the seeded admin account so the app is
+    // one click away. Remove alongside DEV_ACCOUNT in store.js.
+    prefillDevCredentials() {
+        document.getElementById('auth-email').value = DEV_ACCOUNT.email;
+        document.getElementById('auth-password').value = DEV_ACCOUNT.password;
     },
 
     bindEvents() {
@@ -130,7 +139,8 @@ const App = {
         const projects = Store.getProjects();
 
         const isEmpty = !items.length && !rooms.length && !projects.length;
-        emptyState.classList.toggle('hidden', !isEmpty || this.currentFilter === 'info');
+        const selfContainedTab = this.currentFilter === 'info' || this.currentFilter === 'game';
+        emptyState.classList.toggle('hidden', !isEmpty || selfContainedTab);
 
         let html = '';
         switch (this.currentFilter) {
@@ -138,6 +148,7 @@ const App = {
             case 'room': html = Views.renderByRoom(); break;
             case 'type': html = Views.renderByType(); break;
             case 'projects': html = Views.renderProjects(); break;
+            case 'game': html = Game.render(); break;
             case 'info': html = Views.renderInfo(); break;
         }
         container.innerHTML = html;

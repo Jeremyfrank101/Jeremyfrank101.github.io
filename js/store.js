@@ -1,5 +1,16 @@
 // store.js — localStorage-based data layer mirroring SwiftData models
 
+// DEV ONLY: seeded admin account so the login form can be pre-filled while building.
+// There is no server — auth is a plain localStorage comparison — so this is a
+// convenience shim, not a credential. Delete this block, the branch in signIn(),
+// and App.prefillDevCredentials() before treating this login as real.
+const DEV_ACCOUNT = {
+    username: 'admin',
+    name: 'Admin',
+    email: 'admin@cozyhome.local',
+    password: 'cozyadmin'
+};
+
 const Store = {
     _key: 'cozyhome_data',
 
@@ -16,7 +27,7 @@ const Store = {
     },
 
     _default() {
-        return { user: null, rooms: [], items: [], projects: [], diyItems: [], theme: 'California Cabana' };
+        return { user: null, rooms: [], items: [], projects: [], diyItems: [], theme: 'California Cabana', gameBest: 0 };
     },
 
     // ---------- Auth ----------
@@ -27,7 +38,13 @@ const Store = {
 
     signIn(email, password) {
         const data = this._load();
-        if (!data.user) throw new Error('No account found. Please sign up.');
+        if (!data.user) {
+            // DEV ONLY: let the seeded admin account sign in on a fresh browser.
+            if (email === DEV_ACCOUNT.email && password === DEV_ACCOUNT.password) {
+                return this.signUp(DEV_ACCOUNT.username, DEV_ACCOUNT.name, DEV_ACCOUNT.email, DEV_ACCOUNT.password);
+            }
+            throw new Error('No account found. Please sign up.');
+        }
         if (data.user.email !== email || data.user.password !== password)
             throw new Error('Invalid email or password.');
         return data.user;
@@ -56,6 +73,17 @@ const Store = {
         const data = this._load();
         data.theme = name;
         this._save(data);
+    },
+
+    // ---------- Game ----------
+
+    getGameBest() {
+        return this._load().gameBest || 0;
+    },
+
+    setGameBest(score) {
+        const data = this._load();
+        if (score > (data.gameBest || 0)) { data.gameBest = score; this._save(data); }
     },
 
     // ---------- Rooms ----------
@@ -230,6 +258,7 @@ const Store = {
         data.projects = [];
         data.diyItems = [];
         data.user = null;
+        data.gameBest = 0;
         this._save(data);
     }
 };

@@ -287,6 +287,7 @@ const Views = {
                         <li><strong>Room</strong> — Browse items organized by room and sub-room</li>
                         <li><strong>Type</strong> — Browse items grouped by type (Tool, Furniture, etc.)</li>
                         <li><strong>Projects</strong> — See all open and completed projects</li>
+                        <li><strong>Game</strong> — A quiz built from your own inventory: where things live, what type they are, and what your projects cost</li>
                         <li><strong>Info</strong> — You are here!</li>
                     </ul>
                 </div>

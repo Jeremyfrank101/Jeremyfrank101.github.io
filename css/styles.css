@@ -6,9 +6,11 @@
     --accent-secondary: rgb(51, 140, 184);
     --accent-secondary-rgb: 51, 140, 184;
     --completed: rgb(77, 179, 102);
+    --completed-rgb: 77, 179, 102;
     --budget: rgb(77, 179, 102);
     --warning: rgb(242, 153, 51);
     --danger: rgb(230, 77, 64);
+    --danger-rgb: 230, 77, 64;
     --card-bg: rgb(255, 247, 237);
     --page-bg: rgb(255, 242, 224);
     --header-grad-start: rgb(242, 115, 77);
@@ -238,10 +240,19 @@ body {
     max-width: 800px;
     margin: 0 auto;
     width: 100%;
+    /* Tabs grow to fill on desktop, scroll instead of clipping on narrow phones */
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+}
+
+.filter-bar::-webkit-scrollbar {
+    display: none;
 }
 
 .filter-tab {
-    flex: 1;
+    flex: 1 0 auto;
+    white-space: nowrap;
     padding: 9px 12px;
     border: 1.5px solid var(--border);
     background: white;
