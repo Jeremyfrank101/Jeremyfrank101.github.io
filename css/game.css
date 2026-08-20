@@ -64,6 +64,18 @@
 
 .dg-root.dg-touch .dg-canvas { cursor: default; }
 
+/* Always-on grade: a slight corner falloff and warm lift that stops the
+   render looking like a raw framebuffer. */
+.dg-grade {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+        radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 52%, rgba(60, 34, 12, 0.34) 100%),
+        linear-gradient(rgba(255, 226, 170, 0.05), rgba(120, 70, 20, 0.07));
+    mix-blend-mode: multiply;
+}
+
 .dg-vignette {
     position: absolute;
     inset: 0;
@@ -74,6 +86,32 @@
         radial-gradient(ellipse at center, rgba(0,0,0,0) 34%, rgba(120, 30, 10, 0.55) 100%),
         linear-gradient(rgba(255, 170, 60, 0.14), rgba(255, 120, 30, 0.2));
 }
+
+/* Reticle: a restrained dot that opens into a ring near an NPC. */
+.dg-reticle {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 7px;
+    height: 7px;
+    margin: -3.5px 0 0 -3.5px;
+    border-radius: 50%;
+    background: rgba(255, 244, 222, 0.62);
+    box-shadow: 0 0 0 1px rgba(40, 22, 8, 0.35);
+    pointer-events: none;
+    transition: width 0.18s ease, height 0.18s ease, margin 0.18s ease,
+                background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.dg-reticle.active {
+    width: 17px;
+    height: 17px;
+    margin: -8.5px 0 0 -8.5px;
+    background: transparent;
+    box-shadow: 0 0 0 1.5px rgba(255, 236, 200, 0.9), 0 0 8px rgba(0, 0, 0, 0.3);
+}
+
+.dg-root.dg-touch .dg-reticle { display: none; }
 
 .dg-root .hidden { display: none !important; }
 

@@ -15,6 +15,10 @@ const DesertGame = {
     WALK_SPEED: 9,
     RUN_SPEED: 15,
 
+    // Where the player starts. Ground clutter is kept clear of it, so this has
+    // to be one shared constant rather than two that can drift apart.
+    SPAWN: { x: 0, z: 26 },
+
     // Cowrie shells were the everyday currency of the Mali Empire, imported
     // from the Maldives; gold dust settled the large caravan accounts.
     PRODUCTS: [
@@ -91,7 +95,7 @@ const DesertGame = {
         // yaw 0 faces -Z, which looks up the plaza toward the palace
         this.yaw = 0;
         this.pitch = -0.04;
-        this.pos = { x: 0, y: 0, z: 26 };
+        this.pos = { x: this.SPAWN.x, y: 0, z: this.SPAWN.z };
         this.vel = { x: 0, z: 0 };
         this.keys = {};
         this.touchMove = { x: 0, y: 0 };
@@ -107,7 +111,9 @@ const DesertGame = {
         this.container.innerHTML = `
         <div class="dg-root">
             <canvas class="dg-canvas"></canvas>
+            <div class="dg-grade"></div>
             <div class="dg-vignette"></div>
+            <div class="dg-reticle"></div>
 
             <div class="dg-hud">
                 <div class="dg-purse"><span class="dg-shell">🐚</span><span class="dg-cowries">0</span> cowries</div>
@@ -161,6 +167,7 @@ const DesertGame = {
             root: q('.dg-root'),
             canvas: q('.dg-canvas'),
             vignette: q('.dg-vignette'),
+            reticle: q('.dg-reticle'),
             cowries: q('.dg-cowries'),
             kit: q('.dg-kit'),
             questBanner: q('.dg-quest-banner'),
@@ -208,11 +215,15 @@ const DesertGame = {
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         this.renderer.setSize(w, h, false);
         this.renderer.outputEncoding = THREE.sRGBEncoding;
+        // Filmic tone mapping is most of the difference between "tech demo"
+        // and "game": highlights roll off instead of clipping to white.
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.toneMappingExposure = 0.95;
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
         this.scene = new THREE.Scene();
-        this.scene.fog = new THREE.FogExp2(0xe4c79a, 0.0055);
+        this.scene.fog = new THREE.FogExp2(0xeed9b0, 0.0048);
 
         this.camera = new THREE.PerspectiveCamera(72, w / h, 0.1, 1200);
 
@@ -226,45 +237,236 @@ const DesertGame = {
         this._buildTown();
         this._buildNPCs();
         this._buildCamel();
+        this._addDust();
 
         this._onResize = this._onResize.bind(this);
         window.addEventListener('resize', this._onResize);
     },
 
+    // ---------- Procedural textures ----------
+    //
+    // All generated white-on-white so material.color can tint them, which keeps
+    // the per-building shade variation while adding surface detail.
+
+    _makeGlowTexture() {
+        if (this._glowTex) return this._glowTex;
+        const S = 128;
+        const c = document.createElement('canvas');
+        c.width = c.height = S;
+        const ctx = c.getContext('2d');
+        const g = ctx.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+        g.addColorStop(0.00, 'rgba(255,255,255,1)');
+        g.addColorStop(0.18, 'rgba(255,255,255,0.62)');
+        g.addColorStop(0.42, 'rgba(255,255,255,0.18)');
+        g.addColorStop(1.00, 'rgba(255,255,255,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, S, S);
+        this._glowTex = new THREE.CanvasTexture(c);
+        return this._glowTex;
+    },
+
+    // Draws a soft blob nine times so the tile wraps seamlessly.
+    _wrapBlob(ctx, S, x, y, r, rgb, alpha) {
+        for (const ox of [-S, 0, S]) {
+            for (const oy of [-S, 0, S]) {
+                const g = ctx.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r);
+                g.addColorStop(0, `rgba(${rgb},${alpha})`);
+                g.addColorStop(1, `rgba(${rgb},0)`);
+                ctx.fillStyle = g;
+                ctx.fillRect(x + ox - r, y + oy - r, r * 2, r * 2);
+            }
+        }
+    },
+
+    _grain(ctx, S, amount) {
+        const img = ctx.getImageData(0, 0, S, S);
+        const d = img.data;
+        for (let i = 0; i < d.length; i += 4) {
+            const n = (Math.random() - 0.5) * amount;
+            d[i] += n; d[i + 1] += n; d[i + 2] += n;
+        }
+        ctx.putImageData(img, 0, 0);
+    },
+
+    // Mud brick: mottled weathering, horizontal coursing, rain streaks.
+    _adobeTexture() {
+        if (this._adobeTex) return this._adobeTex;
+        const S = 512;   // walls are read from a metre away, so 256 smears
+        const c = document.createElement('canvas');
+        c.width = c.height = S;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, S, S);
+
+        for (let i = 0; i < 240; i++) {
+            const dark = Math.random() < 0.55;
+            this._wrapBlob(ctx, S,
+                Math.random() * S, Math.random() * S,
+                16 + Math.random() * 64,
+                dark ? '86,60,32' : '255,248,232',
+                0.13 + Math.random() * 0.18);
+        }
+
+        // courses of brick, roughly every 30cm at our tile scale
+        for (let y = 0; y < S; y += 60) {
+            ctx.fillStyle = 'rgba(74,50,26,0.34)';
+            ctx.fillRect(0, y, S, 4);
+            ctx.fillStyle = 'rgba(255,250,236,0.26)';
+            ctx.fillRect(0, y + 4, S, 2.8);
+        }
+
+        // vertical weathering streaks running down from the courses
+        for (let i = 0; i < 60; i++) {
+            const h = 68 + Math.random() * 220;
+            const g = ctx.createLinearGradient(0, 0, 0, h);
+            g.addColorStop(0, 'rgba(72,50,27,0.30)');
+            g.addColorStop(1, 'rgba(72,50,27,0)');
+            ctx.fillStyle = g;
+            ctx.save();
+            ctx.translate(Math.random() * S, Math.random() * S);
+            ctx.fillRect(0, 0, 2 + Math.random() * 6, h);
+            ctx.restore();
+        }
+
+        this._grain(ctx, S, 30);
+        const tex = new THREE.CanvasTexture(c);
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+        this._adobeTex = tex;
+        return tex;
+    },
+
+    // Sand: fine grain plus wind ripples.
+    _sandTexture() {
+        if (this._sandTex) return this._sandTex;
+        const S = 256;
+        const c = document.createElement('canvas');
+        c.width = c.height = S;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, S, S);
+
+        for (let i = 0; i < 80; i++) {
+            this._wrapBlob(ctx, S, Math.random() * S, Math.random() * S,
+                14 + Math.random() * 44,
+                Math.random() < 0.5 ? '132,96,52' : '255,250,236',
+                0.09 + Math.random() * 0.12);
+        }
+
+        // wind ripples: paired dark/light sine bands, wrapping on both axes
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 30; i++) {
+            const y0 = (i / 30) * S;
+            const wobble = 3 + Math.random() * 2.5;
+            // Slight per-band phase and amplitude drift keeps the tile from
+            // reading as corduroy when it repeats across the dunes.
+            const phase = Math.random() * Math.PI * 2;
+            const freq = 3 + Math.floor(Math.random() * 3);
+            ctx.strokeStyle = 'rgba(120,86,44,0.13)';
+            ctx.beginPath();
+            for (let x = 0; x <= S; x += 4) {
+                const y = y0 + Math.sin((x / S) * Math.PI * 2 * freq + phase) * wobble;
+                x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+            ctx.strokeStyle = 'rgba(255,252,242,0.12)';
+            ctx.beginPath();
+            for (let x = 0; x <= S; x += 4) {
+                const y = y0 + 2.6 + Math.sin((x / S) * Math.PI * 2 * freq + phase) * wobble;
+                x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        }
+
+        this._grain(ctx, S, 26);
+        const tex = new THREE.CanvasTexture(c);
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+        this._sandTex = tex;
+        return tex;
+    },
+
+    // BoxGeometry gives every face 0..1 UVs, which stretches the tile on big
+    // walls. Rescale per face so texel density is uniform across the town.
+    _tileBoxUVs(geo, w, h, d, tile = 5) {
+        const uv = geo.attributes.uv;
+        const spans = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
+        for (let f = 0; f < 6; f++) {
+            const [su, sv] = spans[f];
+            for (let i = 0; i < 4; i++) {
+                const k = f * 4 + i;
+                uv.setXY(k, uv.getX(k) * su / tile, uv.getY(k) * sv / tile);
+            }
+        }
+        uv.needsUpdate = true;
+    },
+
+    // Real banco walls lean inward as they rise. Pull the top ring in.
+    _taperedBox(w, h, d, taper = 0.05) {
+        const geo = new THREE.BoxGeometry(w, h, d);
+        const pos = geo.attributes.position;
+        for (let i = 0; i < pos.count; i++) {
+            if (pos.getY(i) > 0) {
+                pos.setX(i, pos.getX(i) * (1 - taper));
+                pos.setZ(i, pos.getZ(i) * (1 - taper));
+            }
+        }
+        pos.needsUpdate = true;
+        geo.computeVertexNormals();
+        this._tileBoxUVs(geo, w, h, d);
+        return geo;
+    },
+
     _addSky() {
         const c = document.createElement('canvas');
-        c.width = 4; c.height = 256;
+        c.width = 4; c.height = 512;
         const ctx = c.getContext('2d');
-        const g = ctx.createLinearGradient(0, 0, 0, 256);
-        g.addColorStop(0.00, '#3f7fc4');   // zenith
-        g.addColorStop(0.45, '#8fb8dc');
-        g.addColorStop(0.72, '#e8d3ae');
-        g.addColorStop(1.00, '#f0dcbb');   // dusty horizon
+        const g = ctx.createLinearGradient(0, 0, 0, 512);
+        g.addColorStop(0.00, '#2c66a8');   // zenith
+        g.addColorStop(0.38, '#6fa3cf');
+        g.addColorStop(0.60, '#b8ccd8');
+        g.addColorStop(0.74, '#eedcb4');   // dust band
+        g.addColorStop(1.00, '#f4e2bd');   // horizon haze
         ctx.fillStyle = g;
-        ctx.fillRect(0, 0, 4, 256);
+        ctx.fillRect(0, 0, 4, 512);
 
         const tex = new THREE.CanvasTexture(c);
         tex.magFilter = THREE.LinearFilter;
         const sky = new THREE.Mesh(
             new THREE.SphereGeometry(600, 32, 20),
-            new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, fog: false, depthWrite: false })
+            // toneMapped:false — the gradient is already the look we want; running
+            // it through ACES just desaturates it.
+            new THREE.MeshBasicMaterial({
+                map: tex, side: THREE.BackSide, fog: false,
+                depthWrite: false, toneMapped: false
+            })
         );
         this.scene.add(sky);
 
-        // the sun itself, low and hot
-        const sun = new THREE.Mesh(
-            new THREE.CircleGeometry(26, 32),
-            new THREE.MeshBasicMaterial({ color: 0xfff3d0, fog: false, transparent: true, opacity: 0.95 })
-        );
-        sun.position.set(-260, 150, -430);
-        sun.lookAt(0, 0, 0);
-        this.scene.add(sun);
+        // The sun: a hot core inside a broad atmospheric glow.
+        const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: this._makeGlowTexture(),
+            color: 0xffedc4, transparent: true, opacity: 0.8,
+            fog: false, depthWrite: false, toneMapped: false
+        }));
+        glow.scale.set(280, 280, 1);
+        glow.position.set(-260, 165, -430);
+        this.scene.add(glow);
+
+        const core = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: this._makeGlowTexture(),
+            color: 0xfffbee, transparent: true, opacity: 1,
+            fog: false, depthWrite: false, toneMapped: false
+        }));
+        core.scale.set(80, 80, 1);
+        core.position.copy(glow.position);
+        this.scene.add(core);
     },
 
     _addLights() {
-        this.scene.add(new THREE.HemisphereLight(0xcfe0f2, 0xa87c48, 0.40));
+        this.scene.add(new THREE.HemisphereLight(0xbcd4ee, 0x9a7040, 0.30));
 
-        const sun = new THREE.DirectionalLight(0xffeec6, 1.05);
+        const sun = new THREE.DirectionalLight(0xffe7b8, 0.95);
         sun.position.set(-70, 90, -110);
         sun.castShadow = true;
         sun.shadow.mapSize.set(2048, 2048);
@@ -274,7 +476,7 @@ const DesertGame = {
         sun.shadow.bias = -0.0016;
         sun.shadow.camera.updateProjectionMatrix();
         this.scene.add(sun);
-        this.scene.add(new THREE.AmbientLight(0xffe9c9, 0.13));
+        this.scene.add(new THREE.AmbientLight(0xffe0b4, 0.07));
     },
 
     // Dunes everywhere, flat where the town stands.
@@ -297,8 +499,8 @@ const DesertGame = {
         geo.rotateX(-Math.PI / 2);
         const pos = geo.attributes.position;
         const colors = [];
-        const sandA = new THREE.Color(0xd2a463);
-        const sandB = new THREE.Color(0xb5854a);
+        const sandA = new THREE.Color(0xe3bc7d);   // sunlit dune crest
+        const sandB = new THREE.Color(0xc0904f);   // trough
         for (let i = 0; i < pos.count; i++) {
             const x = pos.getX(i), z = pos.getZ(i);
             const y = this.groundHeight(x, z);
@@ -310,7 +512,13 @@ const DesertGame = {
         geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
         geo.computeVertexNormals();
 
-        const ground = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }));
+        const sand = this._sandTexture();
+        sand.repeat.set(58, 58);
+
+        const ground = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
+            vertexColors: true,
+            map: sand
+        }));
         ground.receiveShadow = true;
         this.scene.add(ground);
     },
@@ -321,12 +529,14 @@ const DesertGame = {
     // called torons, tapering walls, and rounded parapet pinnacles.
 
     _adobe(shade = 0) {
-        const base = new THREE.Color(0xc79a63).offsetHSL(0, 0, shade);
-        return new THREE.MeshLambertMaterial({ color: base });
+        // Deliberately darker and browner than the sand so the town reads as a
+        // silhouette against the dunes instead of dissolving into them.
+        const base = new THREE.Color(0xa87d4e).offsetHSL(0, 0, shade);
+        return new THREE.MeshLambertMaterial({ color: base, map: this._adobeTexture() });
     },
 
-    _block(w, h, d, x, y, z, shade = 0) {
-        const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), this._adobe(shade));
+    _block(w, h, d, x, y, z, shade = 0, taper = 0.045) {
+        const m = new THREE.Mesh(this._taperedBox(w, h, d, taper), this._adobe(shade));
         m.position.set(x, y + h / 2, z);
         m.castShadow = true;
         m.receiveShadow = true;
@@ -501,6 +711,134 @@ const DesertGame = {
         this._addWell();
         this._addPalms();
         this._addGateMarkers();
+        this._addGroundClutter();
+    },
+
+    // Rocks and dry scrub. Empty ground reads as an untextured plane no matter
+    // how good the material is — scattered objects give the eye scale cues.
+    _addGroundClutter() {
+        // Deterministic scatter so the layout is stable between runs.
+        let seed = 1337;
+        const rnd = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
+
+        // InstancedMesh keeps hundreds of props at a handful of draw calls,
+        // which matters on phones far more than the triangle count does.
+        const dummy = new THREE.Object3D();
+
+        const rockGeos = [
+            new THREE.DodecahedronGeometry(1, 0),
+            new THREE.DodecahedronGeometry(1, 1),
+            new THREE.IcosahedronGeometry(1, 0)
+        ];
+        const rockTints = [
+            new THREE.Color(0x8f7d66), new THREE.Color(0x9c8a70), new THREE.Color(0x7d6b56)
+        ];
+
+        // Pre-roll placements so each geometry knows its instance count.
+        const spots = [];
+        for (let i = 0; i < 300; i++) {
+            const a = rnd() * Math.PI * 2;
+            const r = 14 + rnd() * 300;
+            const x = Math.cos(a) * r, z = Math.sin(a) * r;
+            const keep = Math.hypot(x, z) >= 16
+                && Math.hypot(x - this.SPAWN.x, z - this.SPAWN.z) >= 11
+                && !this._insideCollider(x, z, 3);
+            spots.push({
+                x, z, keep,
+                geo: (rnd() * rockGeos.length) | 0,
+                tint: (rnd() * rockTints.length) | 0,
+                s: 0.18 + rnd() * (r > this.TOWN_RADIUS ? 1.5 : 0.5),
+                sy: 0.5 + rnd() * 0.5,
+                rx: rnd() * 3, ry: rnd() * 3, rz: rnd() * 3
+            });
+        }
+
+        rockGeos.forEach((geo, gi) => {
+            const mine = spots.filter(s => s.keep && s.geo === gi);
+            if (!mine.length) return;
+            const mesh = new THREE.InstancedMesh(
+                geo,
+                new THREE.MeshLambertMaterial({ flatShading: true }),
+                mine.length
+            );
+            mine.forEach((s, i) => {
+                dummy.position.set(s.x, this.groundHeight(s.x, s.z) + s.s * 0.35, s.z);
+                dummy.scale.set(s.s, s.s * s.sy, s.s);
+                dummy.rotation.set(s.rx, s.ry, s.rz);
+                dummy.updateMatrix();
+                mesh.setMatrixAt(i, dummy.matrix);
+                mesh.setColorAt(i, rockTints[s.tint]);
+            });
+            mesh.instanceMatrix.needsUpdate = true;
+            if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            this.scene.add(mesh);
+        });
+
+        // Dry scrub: crossed planes, cheap and reads well at a distance.
+        const scrubPlacements = [];
+        for (let i = 0; i < 190; i++) {
+            const a = rnd() * Math.PI * 2;
+            const r = 18 + rnd() * 260;
+            const x = Math.cos(a) * r, z = Math.sin(a) * r;
+            // Scrub belongs out past the built-up ground, not in the market plaza.
+            if (r < this.TOWN_RADIUS * 0.72) continue;
+            if (Math.hypot(x - this.SPAWN.x, z - this.SPAWN.z) < 14) continue;
+            if (this._insideCollider(x, z, 3)) continue;
+            scrubPlacements.push({ x, z, h: 0.5 + rnd() * 0.8, rot: rnd() * Math.PI });
+        }
+
+        if (scrubPlacements.length) {
+            const scrubMesh = new THREE.InstancedMesh(
+                new THREE.PlaneGeometry(1, 1),
+                new THREE.MeshLambertMaterial({
+                    color: 0x8a8143, side: THREE.DoubleSide,
+                    transparent: true, alphaTest: 0.5, map: this._scrubTexture()
+                }),
+                scrubPlacements.length * 2   // two crossed planes per bush
+            );
+            scrubPlacements.forEach((s, i) => {
+                for (let k = 0; k < 2; k++) {
+                    dummy.position.set(s.x, this.groundHeight(s.x, s.z) + s.h / 2, s.z);
+                    dummy.rotation.set(0, s.rot + k * Math.PI / 2, 0);
+                    dummy.scale.set(s.h * 1.6, s.h, 1);
+                    dummy.updateMatrix();
+                    scrubMesh.setMatrixAt(i * 2 + k, dummy.matrix);
+                }
+            });
+            scrubMesh.instanceMatrix.needsUpdate = true;
+            this.scene.add(scrubMesh);
+        }
+    },
+
+    _insideCollider(x, z, pad = 0) {
+        return this.colliders.some(c =>
+            Math.abs(x - c.x) < c.hw + pad && Math.abs(z - c.z) < c.hd + pad);
+    },
+
+    _scrubTexture() {
+        if (this._scrubTex) return this._scrubTex;
+        const S = 64;
+        const c = document.createElement('canvas');
+        c.width = c.height = S;
+        const ctx = c.getContext('2d');
+        ctx.clearRect(0, 0, S, S);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineCap = 'round';
+        for (let i = 0; i < 26; i++) {
+            const x0 = S / 2 + (Math.random() - 0.5) * S * 0.5;
+            ctx.lineWidth = 1 + Math.random() * 1.6;
+            ctx.beginPath();
+            ctx.moveTo(x0, S);
+            ctx.quadraticCurveTo(
+                x0 + (Math.random() - 0.5) * 22, S * 0.5,
+                x0 + (Math.random() - 0.5) * 40, S * (0.05 + Math.random() * 0.35)
+            );
+            ctx.stroke();
+        }
+        this._scrubTex = new THREE.CanvasTexture(c);
+        return this._scrubTex;
     },
 
     _stall(parent, x, z) {
@@ -522,17 +860,114 @@ const DesertGame = {
         parent.add(g);
     },
 
+    // The wells were what made Timbuktu worth stopping at.
     _addWell() {
         const g = new THREE.Group();
-        const ring = new THREE.Mesh(
-            new THREE.CylinderGeometry(1.9, 2.1, 1.1, 16),
-            this._adobe(-0.04)
-        );
-        ring.position.set(6, 0.55, 4);
+        const X = 6, Z = 4;
+
+        const ring = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.7, 0.95, 20), this._adobe(-0.04));
+        ring.position.set(X, 0.46, Z);
         ring.castShadow = true; ring.receiveShadow = true;
         g.add(ring);
+
+        // dark shaft, so it reads as a hole rather than a drum
+        const shaft = new THREE.Mesh(
+            new THREE.CylinderGeometry(1.32, 1.32, 0.5, 20),
+            new THREE.MeshBasicMaterial({ color: 0x140d06 })
+        );
+        shaft.position.set(X, 0.68, Z);
+        g.add(shaft);
+
+        const lip = new THREE.Mesh(new THREE.TorusGeometry(1.5, 0.13, 8, 22), this._adobe(0.03));
+        lip.position.set(X, 0.94, Z);
+        lip.rotation.x = Math.PI / 2;
+        lip.castShadow = true;
+        g.add(lip);
+
+        // A-frame and windlass
+        const wood = new THREE.MeshLambertMaterial({ color: 0x6b4a2a });
+        [-1, 1].forEach(s => {
+            const post = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 2.5, 7), wood);
+            post.position.set(X + s * 1.5, 1.25, Z);
+            post.rotation.z = s * 0.13;
+            post.castShadow = true;
+            g.add(post);
+        });
+        const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 3.2, 7), wood);
+        beam.position.set(X, 2.44, Z);
+        beam.rotation.z = Math.PI / 2;
+        beam.castShadow = true;
+        g.add(beam);
+
+        // rope and bucket
+        const rope = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.022, 0.022, 1.15, 5),
+            new THREE.MeshLambertMaterial({ color: 0xcbb68d })
+        );
+        rope.position.set(X + 0.35, 1.88, Z);
+        g.add(rope);
+        const bucket = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.16, 0.3, 10), wood);
+        bucket.position.set(X + 0.35, 1.18, Z);
+        bucket.castShadow = true;
+        g.add(bucket);
+
         this.scene.add(g);
-        this._collider(6, 4, 4, 4);
+        this._collider(X, Z, 3.2, 3.2);
+    },
+
+    // ---------- Atmosphere ----------
+    //
+    // Airborne dust. Cheap (one Points draw) and it does more for the sense of
+    // heat and distance than any amount of extra geometry.
+    _addDust() {
+        const COUNT = 900;
+        const pos = new Float32Array(COUNT * 3);
+        this._dustSpan = 150;
+        for (let i = 0; i < COUNT; i++) {
+            pos[i * 3]     = (Math.random() - 0.5) * this._dustSpan;
+            pos[i * 3 + 1] = Math.random() * 14;
+            pos[i * 3 + 2] = (Math.random() - 0.5) * this._dustSpan;
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+
+        const mat = new THREE.PointsMaterial({
+            size: 0.26,
+            map: this._makeGlowTexture(),
+            color: 0xfaeacb,
+            transparent: true,
+            opacity: 0.6,
+            depthWrite: false,
+            blending: THREE.NormalBlending,
+            sizeAttenuation: true
+        });
+
+        this.dust = new THREE.Points(geo, mat);
+        this.dust.frustumCulled = false;
+        this.scene.add(this.dust);
+    },
+
+    // Drifts the dust on the wind and keeps the cloud centred on the player so
+    // a small particle count covers the whole world.
+    _updateDust(dt) {
+        if (!this.dust) return;
+        const p = this.dust.geometry.attributes.position;
+        const span = this._dustSpan, half = span / 2;
+        const a = p.array;
+        for (let i = 0; i < a.length; i += 3) {
+            a[i]     += dt * 2.6;                                   // wind, +X
+            a[i + 1] += dt * 0.25 * Math.sin((a[i] + a[i + 2]) * 0.1);
+            a[i + 2] += dt * 0.8;
+
+            // wrap into the box centred on the player
+            if (a[i]     - this.pos.x >  half) a[i]     -= span;
+            if (a[i]     - this.pos.x < -half) a[i]     += span;
+            if (a[i + 2] - this.pos.z >  half) a[i + 2] -= span;
+            if (a[i + 2] - this.pos.z < -half) a[i + 2] += span;
+            if (a[i + 1] > 14) a[i + 1] = 0;
+            if (a[i + 1] < 0) a[i + 1] = 14;
+        }
+        p.needsUpdate = true;
     },
 
     _addPalms() {
@@ -612,10 +1047,22 @@ const DesertGame = {
         return { tex, aspect: c.width / c.height };
     },
 
-    _sign(text, x, y, z, scale = 2.4) {
+    // sizeAttenuation:false pins a sprite to a constant fraction of the
+    // viewport, the way a nameplate should behave. Without it a label that
+    // reads well at 30m fills the screen at 3m.
+    // screen height fraction ≈ scale.y / tan(fov/2) / 2
+    _screenSprite(tex, aspect, screenFrac) {
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: tex, transparent: true, depthTest: true, sizeAttenuation: false
+        }));
+        const h = screenFrac * 2 * Math.tan(THREE.MathUtils.degToRad(72 / 2));
+        sp.scale.set(h * aspect, h, 1);
+        return sp;
+    },
+
+    _sign(text, x, y, z) {
         const { tex, aspect } = this._makeLabelTexture(text);
-        const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: true }));
-        sp.scale.set(scale * aspect, scale, 1);
+        const sp = this._screenSprite(tex, aspect, 0.030);
         sp.position.set(x, y, z);
         this.scene.add(sp);
         this.labels.push({ sprite: sp, fadeStart: 38, fadeEnd: 62 });
@@ -635,56 +1082,89 @@ const DesertGame = {
 
     // ---------- NPCs ----------
 
+    // A boubou-clad figure: wide robe, sleeves, shoulder shawl, turban.
     _person(robeColor, turbanColor) {
         const g = new THREE.Group();
-        const robe = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.42, 0.72, 1.55, 10),
-            new THREE.MeshLambertMaterial({ color: robeColor })
-        );
-        robe.position.y = 0.78;
+        const robeMat = new THREE.MeshLambertMaterial({ color: robeColor });
+        const shawlMat = new THREE.MeshLambertMaterial({
+            color: new THREE.Color(robeColor).offsetHSL(0, 0.04, -0.08)
+        });
+        const skinMat = new THREE.MeshLambertMaterial({ color: 0x6b4426 });
+        const clothMat = new THREE.MeshLambertMaterial({ color: turbanColor });
+
+        // The boubou flares from the shoulders to the ground.
+        const robe = new THREE.Mesh(new THREE.CylinderGeometry(0.40, 0.80, 1.52, 14), robeMat);
+        robe.position.y = 0.76;
         robe.castShadow = true;
+        robe.receiveShadow = true;
         g.add(robe);
 
-        const shoulders = new THREE.Mesh(
-            new THREE.SphereGeometry(0.43, 12, 10),
-            new THREE.MeshLambertMaterial({ color: robeColor })
-        );
-        shoulders.position.y = 1.55;
-        shoulders.scale.set(1, 0.7, 0.85);
-        shoulders.castShadow = true;
-        g.add(shoulders);
+        // hem, slightly proud of the robe so it catches a shadow line
+        const hem = new THREE.Mesh(new THREE.CylinderGeometry(0.82, 0.84, 0.1, 14), shawlMat);
+        hem.position.y = 0.05;
+        hem.castShadow = true;
+        g.add(hem);
 
-        const head = new THREE.Mesh(
-            new THREE.SphereGeometry(0.21, 12, 10),
-            new THREE.MeshLambertMaterial({ color: 0x6b4426 })
-        );
-        head.position.y = 1.87;
+        const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.40, 0.5, 12), robeMat);
+        torso.position.y = 1.68;
+        torso.castShadow = true;
+        g.add(torso);
+
+        // shawl draped over the shoulders
+        const shawl = new THREE.Mesh(new THREE.SphereGeometry(0.40, 14, 10), shawlMat);
+        shawl.position.y = 1.80;
+        shawl.scale.set(1.05, 0.52, 0.92);
+        shawl.castShadow = true;
+        g.add(shawl);
+
+        // sleeves
+        [-1, 1].forEach(s => {
+            const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.10, 0.16, 0.66, 8), robeMat);
+            arm.position.set(s * 0.34, 1.52, 0);
+            arm.rotation.z = s * 0.20;
+            arm.castShadow = true;
+            g.add(arm);
+            const hand = new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 6), skinMat);
+            hand.position.set(s * 0.42, 1.20, 0);
+            g.add(hand);
+        });
+
+        const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.09, 0.12, 8), skinMat);
+        neck.position.y = 1.97;
+        g.add(neck);
+
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.155, 14, 12), skinMat);
+        head.position.y = 2.10;
+        head.scale.set(0.92, 1.1, 1);
         head.castShadow = true;
         g.add(head);
 
-        const turban = new THREE.Mesh(
-            new THREE.TorusGeometry(0.2, 0.095, 8, 14),
-            new THREE.MeshLambertMaterial({ color: turbanColor })
-        );
-        turban.position.y = 1.96;
-        turban.rotation.x = Math.PI / 2;
-        turban.castShadow = true;
-        g.add(turban);
+        // Tagelmust: wound band plus a crown and a tail down the back.
+        const wrap = new THREE.Mesh(new THREE.TorusGeometry(0.155, 0.062, 8, 16), clothMat);
+        wrap.position.y = 2.17;
+        wrap.rotation.x = Math.PI / 2;
+        wrap.castShadow = true;
+        g.add(wrap);
 
-        const top = new THREE.Mesh(
-            new THREE.SphereGeometry(0.2, 10, 8),
-            new THREE.MeshLambertMaterial({ color: turbanColor })
-        );
-        top.position.y = 2.02;
-        top.scale.y = 0.6;
-        g.add(top);
+        const crown = new THREE.Mesh(new THREE.SphereGeometry(0.163, 12, 10), clothMat);
+        crown.position.y = 2.21;
+        crown.scale.y = 0.72;
+        crown.castShadow = true;
+        g.add(crown);
+
+        const tail = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.42, 0.05), clothMat);
+        tail.position.set(0, 1.98, -0.15);
+        tail.rotation.x = -0.18;
+        tail.castShadow = true;
+        g.add(tail);
 
         return g;
     },
 
     _buildNPCs() {
         const defs = [
-            { id: 'merchant', name: 'Fatoumata Cissé', role: 'Provisioner',  robe: 0xb5622f, turban: 0xe8d9bb, x: 22,  z: 6,   face: -2.2 },
+            // Stands in the open in front of the market stalls, not inside one.
+            { id: 'merchant', name: 'Fatoumata Cissé', role: 'Provisioner',  robe: 0xb5622f, turban: 0xe8d9bb, x: 24,  z: 1,   face: -2.5 },
             { id: 'camels',   name: 'Amadou ag Ibrahim', role: 'Camel Trader', robe: 0x2f4d7a, turban: 0x3c66a0, x: -22, z: 16,  face: 2.2 },
             { id: 'scholar',  name: 'Sidi al-Bakri',  role: 'Scholar of Sankore', robe: 0xefe4cc, turban: 0xd8c49a, x: 27, z: -13, face: -2.6 }
         ];
@@ -696,10 +1176,8 @@ const DesertGame = {
             this.scene.add(g);
 
             const { tex, aspect } = this._makeLabelTexture(d.name, d.role);
-            const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
-            const s = 1.5;
-            sp.scale.set(s * aspect, s, 1);
-            sp.position.set(d.x, this.groundHeight(d.x, d.z) + 2.75, d.z);
+            const sp = this._screenSprite(tex, aspect, 0.034);
+            sp.position.set(d.x, this.groundHeight(d.x, d.z) + 2.72, d.z);
             this.scene.add(sp);
             this.labels.push({ sprite: sp, fadeStart: 22, fadeEnd: 40 });
 
@@ -710,53 +1188,106 @@ const DesertGame = {
 
     // ---------- Camel ----------
 
+    // A dromedary, built along +X so atan2-based heading works directly.
     _buildCamel() {
         const g = new THREE.Group();
-        const hide = new THREE.MeshLambertMaterial({ color: 0xc19a6b });
+        const hide = new THREE.MeshLambertMaterial({ color: 0xbe956a });
+        const hideDark = new THREE.MeshLambertMaterial({ color: 0xa07a52 });
 
-        const body = new THREE.Mesh(new THREE.SphereGeometry(1.05, 14, 10), hide);
-        body.scale.set(1.65, 0.95, 0.85);
-        body.position.y = 1.75;
+        const body = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), hide);
+        body.scale.set(1.55, 0.86, 0.78);
+        body.position.y = 1.72;
         body.castShadow = true;
+        body.receiveShadow = true;
         g.add(body);
 
-        const hump = new THREE.Mesh(new THREE.SphereGeometry(0.62, 12, 10), hide);
-        hump.position.set(-0.1, 2.5, 0);
-        hump.scale.set(1.1, 0.95, 0.9);
+        // chest, deeper than the hindquarters
+        const chest = new THREE.Mesh(new THREE.SphereGeometry(0.72, 14, 10), hide);
+        chest.scale.set(1.0, 1.0, 0.86);
+        chest.position.set(0.82, 1.72, 0);
+        chest.castShadow = true;
+        g.add(chest);
+
+        const hump = new THREE.Mesh(new THREE.SphereGeometry(0.56, 14, 12), hide);
+        hump.position.set(-0.16, 2.38, 0);
+        hump.scale.set(1.15, 1.0, 0.92);
         hump.castShadow = true;
         g.add(hump);
 
-        const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.4, 1.7, 8), hide);
-        neck.position.set(1.45, 2.5, 0);
-        neck.rotation.z = -0.5;
+        const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.33, 1.5, 10), hide);
+        neck.position.set(1.34, 2.42, 0);
+        neck.rotation.z = -0.62;
         neck.castShadow = true;
         g.add(neck);
 
-        const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 10, 8), hide);
-        head.scale.set(1.5, 0.85, 0.85);
-        head.position.set(2.05, 3.15, 0);
-        head.castShadow = true;
-        g.add(head);
-
-        [[-0.85, 0.5], [-0.85, -0.5], [0.85, 0.5], [0.85, -0.5]].forEach(([lx, lz]) => {
-            const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.13, 1.7, 6), hide);
-            leg.position.set(lx, 0.85, lz);
-            leg.castShadow = true;
-            g.add(leg);
+        const headGrp = new THREE.Group();
+        headGrp.position.set(1.86, 3.02, 0);
+        const skull = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 10), hide);
+        skull.scale.set(1.05, 0.95, 0.9);
+        skull.castShadow = true;
+        headGrp.add(skull);
+        const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.10, 0.15, 0.44, 8), hide);
+        muzzle.position.set(0.26, -0.10, 0);
+        muzzle.rotation.z = -1.25;
+        muzzle.castShadow = true;
+        headGrp.add(muzzle);
+        [-1, 1].forEach(s => {
+            const ear = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.15, 6), hideDark);
+            ear.position.set(-0.10, 0.21, s * 0.13);
+            headGrp.add(ear);
         });
+        g.add(headGrp);
 
-        // saddle blanket
-        const blanket = new THREE.Mesh(
-            new THREE.BoxGeometry(1.5, 0.16, 1.5),
-            new THREE.MeshLambertMaterial({ color: 0x8c2f2a })
-        );
-        blanket.position.set(-0.1, 2.62, 0);
+        // Legs with a knee break, so they read as legs rather than posts.
+        const legAt = (lx, lz, front) => {
+            const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.11, 0.95, 7), hide);
+            upper.position.set(lx, 1.22, lz);
+            upper.rotation.z = front ? 0.07 : -0.07;
+            upper.castShadow = true;
+            g.add(upper);
+            const lower = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.062, 0.86, 6), hide);
+            lower.position.set(lx + (front ? 0.05 : -0.05), 0.44, lz);
+            lower.castShadow = true;
+            g.add(lower);
+            const foot = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 6), hideDark);
+            foot.scale.set(1.1, 0.5, 1);
+            foot.position.set(lx + (front ? 0.06 : -0.06), 0.07, lz);
+            g.add(foot);
+        };
+        legAt(0.78, 0.42, true); legAt(0.78, -0.42, true);
+        legAt(-0.80, 0.44, false); legAt(-0.80, -0.44, false);
+
+        const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.02, 0.7, 5), hideDark);
+        tail.position.set(-1.52, 1.62, 0);
+        tail.rotation.z = 0.5;
+        g.add(tail);
+
+        // Saddle: blanket, wooden frame, and slung packs.
+        const blanket = new THREE.Mesh(new THREE.BoxGeometry(1.34, 0.1, 1.5),
+            new THREE.MeshLambertMaterial({ color: 0x8c2f2a }));
+        blanket.position.set(-0.14, 2.66, 0);
+        blanket.castShadow = true;
         g.add(blanket);
+
+        const saddle = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.26, 0.86),
+            new THREE.MeshLambertMaterial({ color: 0x6b4a2a }));
+        saddle.position.set(-0.14, 2.82, 0);
+        saddle.castShadow = true;
+        g.add(saddle);
+
+        [-1, 1].forEach(s => {
+            const pack = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.5, 0.3),
+                new THREE.MeshLambertMaterial({ color: 0xb08a52 }));
+            pack.position.set(-0.34, 2.16, s * 0.74);
+            pack.castShadow = true;
+            g.add(pack);
+        });
 
         g.visible = false;
         this.scene.add(g);
         this.camel = g;
         this.camelPos = { x: -18, z: 20 };
+        this._camelHeading = undefined;
     },
 
     // ---------- Input ----------
@@ -779,8 +1310,8 @@ const DesertGame = {
         };
 
         this._onCanvasClick = () => {
-            if (this.state === 'playing' && document.pointerLockElement !== this.canvas && !this._isTouch()) {
-                this.canvas.requestPointerLock();
+            if (this.state === 'playing' && document.pointerLockElement !== this.canvas) {
+                this._grabMouse();
             }
         };
 
@@ -873,7 +1404,7 @@ const DesertGame = {
     _begin() {
         this.dom.intro.classList.add('hidden');
         this.state = 'playing';
-        if (!this._isTouch()) this.canvas.requestPointerLock();
+        this._grabMouse();
     },
 
     _restart() {
@@ -886,7 +1417,7 @@ const DesertGame = {
         this.dom.timer.classList.add('hidden');
         this.dom.questBanner.classList.add('hidden');
         this._renderHUD();
-        if (!this._isTouch()) this.canvas.requestPointerLock();
+        this._grabMouse();
     },
 
     _die(reason) {
@@ -906,6 +1437,20 @@ const DesertGame = {
     },
 
     // ---------- Interaction ----------
+
+    // requestPointerLock throws (sync in older Chrome, rejected promise in
+    // newer) when the document can't take the lock — embedded in an iframe,
+    // not the active document, or the user just pressed Esc. Mouse look simply
+    // doesn't engage in that case; it must never break the calling handler.
+    _grabMouse() {
+        if (this._isTouch() || !this.canvas) return;
+        try {
+            const r = this.canvas.requestPointerLock();
+            if (r && typeof r.catch === 'function') r.catch(() => {});
+        } catch (e) {
+            /* pointer lock unavailable — keyboard movement still works */
+        }
+    },
 
     _nearestNPC() {
         let best = null, bestD = 4.2;
@@ -931,7 +1476,7 @@ const DesertGame = {
         this.activeNPC = null;
         if (this.state === 'panel') {
             this.state = 'playing';
-            if (!this._isTouch()) this.canvas.requestPointerLock();
+            this._grabMouse();
         }
     },
 
@@ -1102,6 +1647,7 @@ const DesertGame = {
         if (this.hasCamel) this._updateCamel(dt);
 
         this._updateLabels();
+        this._updateDust(dt);
 
         // --- exposure ---
         const dist = Math.hypot(this.pos.x, this.pos.z);
@@ -1131,6 +1677,7 @@ const DesertGame = {
 
         // --- interaction prompt ---
         const npc = this._nearestNPC();
+        this.dom.reticle.classList.toggle('active', !!npc);
         if (npc) {
             this.dom.prompt.innerHTML = this._isTouch()
                 ? `Speak with <strong>${npc.name}</strong>`
@@ -1166,24 +1713,42 @@ const DesertGame = {
         return { x, z };
     },
 
+    // The camel trails at your shoulder rather than steering at your face, so
+    // it stays out of the view and reads as being led.
     _updateCamel(dt) {
-        const follow = 4.2;
-        const dx = this.pos.x - this.camelPos.x;
-        const dz = this.pos.z - this.camelPos.z;
+        const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);   // player forward
+        const rx = -fz, rz = fx;                                    // player right
+        const tx = this.pos.x - fx * 3.6 + rx * 2.2;
+        const tz = this.pos.z - fz * 3.6 + rz * 2.2;
+
+        const dx = tx - this.camelPos.x, dz = tz - this.camelPos.z;
         const d = Math.hypot(dx, dz);
-        if (d > follow) {
-            const step = Math.min(d - follow, (this.WALK_SPEED * 0.92) * dt);
+        const deadzone = 0.6;
+
+        if (d > deadzone) {
+            const step = Math.min(d - deadzone, this.WALK_SPEED * 1.05 * dt);
             this.camelPos.x += (dx / d) * step;
             this.camelPos.z += (dz / d) * step;
-            this.camel.rotation.y = Math.atan2(dx, dz) - Math.PI / 2;
+            this._camelHeading = Math.atan2(dx, dz) - Math.PI / 2;
         }
+
+        // ease toward the heading so it doesn't snap around when you turn
+        if (this._camelHeading !== undefined) {
+            let diff = this._camelHeading - this.camel.rotation.y;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            this.camel.rotation.y += diff * Math.min(1, dt * 6);
+        }
+
         this.camel.position.set(
             this.camelPos.x,
             this.groundHeight(this.camelPos.x, this.camelPos.z),
             this.camelPos.z
         );
-        // a little gait bob
-        this.camel.position.y += Math.sin(performance.now() * 0.006) * 0.05;
+        // gait bob, only while actually walking
+        if (d > deadzone) {
+            this.camel.position.y += Math.abs(Math.sin(performance.now() * 0.008)) * 0.07;
+        }
     },
 
     _loop() {
