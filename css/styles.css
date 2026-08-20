@@ -168,6 +168,32 @@ body {
     padding: 10px 12px;
 }
 
+/* Sync indicator in the header. Silent when everything is saved. */
+.sync-status {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    top: calc(100% - 2px);
+    white-space: nowrap;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    padding: 3px 10px;
+    border-radius: 50px;
+    background: rgba(0, 0, 0, 0.22);
+    color: rgba(255, 255, 255, 0.95);
+    pointer-events: none;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+.sync-status.offline,
+.sync-status.error {
+    background: var(--danger);
+    color: #fff;
+    cursor: pointer;
+    pointer-events: auto;
+}
+
 .auth-form.busy {
     opacity: 0.75;
     pointer-events: none;

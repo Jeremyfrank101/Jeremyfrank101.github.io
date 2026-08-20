@@ -1,0 +1,396 @@
+// sync.js — Supabase persistence behind Store's synchronous API.
+//
+// The rest of the app reads Store inside template literals (Views, Modal), so
+// reads have to stay synchronous. This layer keeps an in-memory cache that the
+// Store reads from, applies writes to it immediately for an instant UI, and
+// pushes them to Postgres in the background.
+//
+// Failed writes are queued in localStorage and retried, so a dropped
+// connection or a mid-write reload doesn't lose the change.
+
+const Sync = {
+    QUEUE_KEY: 'cozyhome_pending',
+    LEGACY_KEY: 'cozyhome_data',
+
+    // camelCase in the app, snake_case in Postgres.
+    TABLES: {
+        rooms:     'rooms',
+        items:     'items',
+        projects:  'projects',
+        diyItems:  'diy_items'
+    },
+
+    cache: null,
+    status: 'idle',      // idle | syncing | offline | error
+    _queue: [],
+    _flushing: false,
+    _listeners: [],
+
+    // ---------- lifecycle ----------
+
+    reset() {
+        this.cache = { rooms: [], items: [], projects: [], diyItems: [], theme: 'California Cabana' };
+    },
+
+    onStatus(fn) { this._listeners.push(fn); },
+
+    _setStatus(s, detail) {
+        this.status = s;
+        this._listeners.forEach(fn => fn(s, detail));
+    },
+
+    get client() { return Auth.client; },
+
+    // Loads everything the signed-in user owns into the cache.
+    //
+    // Coalesced: signing up fires onAuthStateChange while the caller is also
+    // awaiting checkAuth(), so two hydrates can overlap. Each one calls
+    // reset(), and the slower one would wipe whatever the faster one — or the
+    // user — had already put in the cache.
+    hydrate() {
+        if (this._hydrating) return this._hydrating;
+        this._hydrating = this._doHydrate().finally(() => { this._hydrating = null; });
+        return this._hydrating;
+    },
+
+    async _doHydrate() {
+        this.reset();
+        this._queue = this._loadQueue();
+        this._setStatus('syncing');
+
+        try {
+            const [rooms, items, projects, diyItems, prefs] = await Promise.all([
+                this.client.from('rooms').select('*'),
+                this.client.from('items').select('*'),
+                this.client.from('projects').select('*'),
+                this.client.from('diy_items').select('*'),
+                this.client.from('preferences').select('*').maybeSingle()
+            ]);
+
+            const firstError = [rooms, items, projects, diyItems, prefs].find(r => r.error);
+            if (firstError) throw firstError.error;
+
+            this.cache.rooms    = (rooms.data    || []).map(this.fromRoom);
+            this.cache.items    = (items.data    || []).map(this.fromItem);
+            this.cache.projects = (projects.data || []).map(this.fromProject);
+            this.cache.diyItems = (diyItems.data || []).map(this.fromDIY);
+            this.cache.theme    = prefs.data?.theme || 'California Cabana';
+
+            // How much this account already had on the server, captured before
+            // any local writes can land, so the import decision is made on the
+            // server state rather than on a cache someone may have added to.
+            const fetchedCount = this.cache.rooms.length + this.cache.items.length +
+                                 this.cache.projects.length + this.cache.diyItems.length;
+
+            await this._resolvePhotoUrls();     // turn stored paths into <img> urls
+            await this.flush();                 // drain anything queued earlier
+            await this._migrateLegacyIfNeeded(fetchedCount);
+            this._setStatus('idle');
+            return true;
+        } catch (err) {
+            console.error('[Sync] hydrate failed', err);
+            this._setStatus('error', err.message || String(err));
+            return false;
+        }
+    },
+
+    // One-time import of data created before the app had a backend.
+    async _migrateLegacyIfNeeded(remoteCount) {
+        const raw = localStorage.getItem(this.LEGACY_KEY);
+        if (!raw) return;
+
+        let legacy;
+        try { legacy = JSON.parse(raw); } catch { return; }
+        if (!legacy) return;
+
+        const counts = ['rooms', 'items', 'projects', 'diyItems']
+            .reduce((n, k) => n + (Array.isArray(legacy[k]) ? legacy[k].length : 0), 0);
+        if (!counts) { localStorage.removeItem(this.LEGACY_KEY); return; }
+
+        // Only import into an empty account, so signing in on a second device
+        // never duplicates what is already there.
+        if (remoteCount > 0) return;
+
+        console.info(`[Sync] importing ${counts} local records into Supabase`);
+        this._setStatus('syncing');
+
+        // Order matters: rooms and projects are referenced by the rest.
+        const push = async (kind, rows, toRow) => {
+            if (!rows.length) return;
+            const { error } = await this.client.from(this.TABLES[kind]).upsert(rows.map(toRow));
+            if (error) throw error;
+        };
+
+        try {
+            // Legacy records carry base64 in `photo`. Upload those to Storage
+            // first and hang the resulting path off the record, so the row
+            // mappers below write a path rather than dropping the image.
+            const kinds = ['rooms', 'projects', 'items', 'diyItems'];
+            let uploaded = 0, failed = 0;
+            for (const kind of kinds) {
+                for (const rec of legacy[kind] || []) {
+                    if (!this.isDataUrl(rec.photo)) continue;
+                    try {
+                        rec.photoPath = await this._uploadPhoto(kind, rec.id, rec.photo);
+                        uploaded++;
+                    } catch (e) {
+                        // Losing a photo must not abort the whole import.
+                        console.warn('[Sync] photo upload failed during import', rec.id, e);
+                        rec.photoPath = null;
+                        failed++;
+                    }
+                }
+            }
+            if (uploaded || failed) {
+                console.info(`[Sync] imported ${uploaded} photo(s)${failed ? `, ${failed} failed` : ''}`);
+            }
+
+            await push('rooms',    legacy.rooms    || [], r => this.toRoom(r));
+            await push('projects', legacy.projects || [], p => this.toProject(p));
+            await push('items',    legacy.items    || [], i => this.toItem(i));
+            await push('diyItems', legacy.diyItems || [], d => this.toDIY(d));
+
+            if (legacy.theme) {
+                await this.client.from('preferences')
+                    .upsert({ user_id: Auth.getUser().id, theme: legacy.theme });
+                this.cache.theme = legacy.theme;
+            }
+
+            // Merge rather than assign. The user can create records while the
+            // import is in flight, and replacing the arrays would silently
+            // discard them.
+            const mergeIn = (key, rows) => {
+                const seen = new Set(this.cache[key].map(r => r.id));
+                rows.forEach(r => { if (!seen.has(r.id)) this.cache[key].push(r); });
+            };
+            mergeIn('rooms',    legacy.rooms    || []);
+            mergeIn('items',    legacy.items    || []);
+            mergeIn('projects', legacy.projects || []);
+            mergeIn('diyItems', legacy.diyItems || []);
+
+            // Replace the imported base64 with signed URLs so the tab stops
+            // holding every image in memory.
+            await this._resolvePhotoUrls();
+
+            // Keep a copy under a different key rather than deleting outright.
+            localStorage.setItem(this.LEGACY_KEY + '_imported', raw);
+            localStorage.removeItem(this.LEGACY_KEY);
+            console.info('[Sync] import complete');
+        } catch (err) {
+            console.error('[Sync] import failed, leaving local data untouched', err);
+            this._setStatus('error', 'Could not import your existing data.');
+        }
+    },
+
+    // ---------- write queue ----------
+
+    _loadQueue() {
+        try { return JSON.parse(localStorage.getItem(this.QUEUE_KEY)) || []; }
+        catch { return []; }
+    },
+
+    _saveQueue() {
+        try { localStorage.setItem(this.QUEUE_KEY, JSON.stringify(this._queue)); }
+        catch (e) { console.warn('[Sync] could not persist queue', e); }
+    },
+
+    // Records an intent and kicks off a flush. Callers do not await this —
+    // the cache is already updated, so the UI is correct either way.
+    enqueue(op) {
+        this._queue.push(op);
+        this._saveQueue();
+        this.flush();
+    },
+
+    async flush() {
+        if (this._flushing || !this._queue.length) return;
+        if (!Auth.getUser()) return;
+        this._flushing = true;
+        this._setStatus('syncing');
+
+        while (this._queue.length) {
+            const op = this._queue[0];
+            try {
+                await this._apply(op);
+                this._queue.shift();
+                this._saveQueue();
+            } catch (err) {
+                console.error('[Sync] write failed, will retry', op, err);
+                this._flushing = false;
+                this._setStatus(navigator.onLine ? 'error' : 'offline', err.message);
+                return;
+            }
+        }
+
+        this._flushing = false;
+        this._setStatus('idle');
+    },
+
+    async _apply(op) {
+        // The theme lives in its own single-row table, so it has no `kind`.
+        if (op.type === 'theme') {
+            const res = await this.client.from('preferences').upsert({
+                user_id: Auth.getUser().id,
+                theme: op.theme,
+                updated_at: new Date().toISOString()
+            });
+            if (res.error) throw res.error;
+            return;
+        }
+
+        const table = this.TABLES[op.kind];
+        if (!table) throw new Error('unknown table for kind ' + op.kind);
+        const q = this.client.from(table);
+
+        // Photo uploads: put the bytes in Storage, then point the row at them.
+        if (op.type === 'upload') {
+            const path = await this._uploadPhoto(op.kind, op.id, op.dataUrl);
+            const res = await q.update({ photo: path }).eq('id', op.id);
+            if (res.error) throw res.error;
+
+            const cached = this._findCached(op.kind, op.id);
+            if (cached) {
+                cached.photoPath = path;
+                // Swap the heavy data URL for a signed one so the tab stops
+                // holding the full image in memory.
+                const { data } = await this.client.storage
+                    .from(this.BUCKET).createSignedUrl(path, this.SIGNED_TTL);
+                if (data?.signedUrl) cached.photo = data.signedUrl;
+            }
+            return;
+        }
+
+        if (op.type === 'photoDelete') {
+            await this._deletePhoto(op.path);
+            return;
+        }
+
+        let res;
+        if (op.type === 'upsert')      res = await q.upsert(op.row);
+        else if (op.type === 'delete') res = await q.delete().eq('id', op.id);
+        else throw new Error('unknown op type ' + op.type);
+
+        if (res.error) throw res.error;
+    },
+
+    pendingCount() { return this._queue.length; },
+
+    // ---------- photos ----------
+    //
+    // The `photo` column holds a Storage path. In the cache, `photoPath` is
+    // that path and `photo` is something an <img src> can use — a signed URL
+    // once loaded, or the raw data URL while an upload is still pending. Views
+    // read `photo` and therefore needed no changes.
+
+    BUCKET: 'photos',
+    SIGNED_TTL: 60 * 60 * 8,   // re-signed on every hydrate anyway
+
+    isDataUrl(v) { return typeof v === 'string' && v.startsWith('data:'); },
+
+    photoPathFor(kind, id) {
+        return `${Auth.getUser().id}/${kind}/${id}`;
+    },
+
+    // One batched request per table instead of one per photo.
+    async _resolvePhotoUrls() {
+        const jobs = [];
+        for (const key of ['rooms', 'items', 'projects', 'diyItems']) {
+            for (const row of this.cache[key]) {
+                if (row.photoPath) jobs.push(row);
+            }
+        }
+        if (!jobs.length) return;
+
+        const paths = jobs.map(r => r.photoPath);
+        const { data, error } = await this.client.storage
+            .from(this.BUCKET)
+            .createSignedUrls(paths, this.SIGNED_TTL);
+
+        if (error) { console.warn('[Sync] could not sign photo urls', error); return; }
+
+        const byPath = new Map();
+        (data || []).forEach((d, i) => {
+            if (d && d.signedUrl) byPath.set(paths[i], d.signedUrl);
+        });
+        jobs.forEach(r => { r.photo = byPath.get(r.photoPath) || null; });
+    },
+
+    async _uploadPhoto(kind, id, dataUrl) {
+        const blob = await (await fetch(dataUrl)).blob();
+        const path = this.photoPathFor(kind, id);
+        const { error } = await this.client.storage
+            .from(this.BUCKET)
+            .upload(path, blob, { upsert: true, contentType: blob.type || 'image/jpeg' });
+        if (error) throw error;
+        return path;
+    },
+
+    async _deletePhoto(path) {
+        if (!path) return;
+        const { error } = await this.client.storage.from(this.BUCKET).remove([path]);
+        // A missing object is not worth failing the queue over.
+        if (error) console.warn('[Sync] could not remove photo', path, error);
+    },
+
+    // Finds the cached record so an upload can write its path back.
+    _findCached(kind, id) {
+        return (this.cache[kind] || []).find(r => r.id === id);
+    },
+
+    // ---------- row mapping ----------
+    // Postgres is snake_case; the app has always used camelCase. Convert at
+    // the boundary rather than renaming fields across every view.
+
+    toRoom(r) {
+        return { id: r.id, name: r.name, parent_room_id: r.parentRoomId || null,
+                 photo: r.photoPath || null, created_at: r.createdAt };
+    },
+    fromRoom(r) {
+        return { id: r.id, name: r.name, parentRoomId: r.parent_room_id,
+                 photoPath: r.photo, photo: null, createdAt: r.created_at };
+    },
+
+    toItem(i) {
+        return { id: i.id, name: i.name, description: i.desc || '',
+                 item_type: i.itemType || 'Other', room_id: i.roomId || null,
+                 photo: i.photoPath || null, created_at: i.createdAt };
+    },
+    fromItem(i) {
+        return { id: i.id, name: i.name, desc: i.description || '',
+                 itemType: i.item_type, roomId: i.room_id,
+                 photoPath: i.photo, photo: null, createdAt: i.created_at };
+    },
+
+    toProject(p) {
+        return { id: p.id, name: p.name, description: p.desc || '',
+                 budget: p.budget || 0, goal_date: p.goalDate || null,
+                 is_completed: !!p.isCompleted, completed_at: p.completedAt || null,
+                 room_ids: p.roomIds || [], item_ids: p.itemIds || [],
+                 options: p.options || [], tasks: p.tasks || [],
+                 is_diy: !!p.isDIY, photo: p.photoPath || null, created_at: p.createdAt };
+    },
+    fromProject(p) {
+        return { id: p.id, name: p.name, desc: p.description || '',
+                 budget: Number(p.budget) || 0, goalDate: p.goal_date,
+                 isCompleted: p.is_completed, completedAt: p.completed_at,
+                 roomIds: p.room_ids || [], itemIds: p.item_ids || [],
+                 options: p.options || [], tasks: p.tasks || [],
+                 isDIY: p.is_diy, photoPath: p.photo, photo: null, createdAt: p.created_at };
+    },
+
+    toDIY(d) {
+        return { id: d.id, project_id: d.projectId, name: d.name,
+                 description: d.desc || '', purpose: d.purpose || '',
+                 is_owned: !!d.isOwned, existing_item_id: d.existingItemId || null,
+                 photo: d.photoPath || null, options: d.options || [], created_at: d.createdAt };
+    },
+    fromDIY(d) {
+        return { id: d.id, projectId: d.project_id, name: d.name,
+                 desc: d.description || '', purpose: d.purpose || '',
+                 isOwned: d.is_owned, existingItemId: d.existing_item_id,
+                 photoPath: d.photo, photo: null, options: d.options || [], createdAt: d.created_at };
+    }
+};
+
+// Retry as soon as the network comes back.
+window.addEventListener('online', () => Sync.flush());

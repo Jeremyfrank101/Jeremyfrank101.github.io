@@ -618,16 +618,52 @@ const Modal = {
         return d.innerHTML;
     },
 
+    // Phone cameras produce 3–8MB files. Those get base64'd into the pending
+    // write queue and uploaded as-is, so downscale before anything else sees
+    // them — 1600px is more than enough for an inventory photo.
+    PHOTO_MAX_EDGE: 1600,
+    PHOTO_QUALITY: 0.82,
+
     _handlePhotoPreview(input, previewId) {
         const preview = document.getElementById(previewId);
         const file = input.files[0];
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            preview.innerHTML = `<img src="${e.target.result}"><button class="remove-photo" onclick="document.getElementById('${previewId}').innerHTML='';document.getElementById('${previewId}').classList.add('hidden')">Remove Photo</button>`;
-            preview.classList.remove('hidden');
-        };
-        reader.readAsDataURL(file);
+
+        preview.innerHTML = '<div class="photo-loading">Processing photo…</div>';
+        preview.classList.remove('hidden');
+
+        this._downscale(file).then(dataUrl => {
+            preview.innerHTML = `<img src="${dataUrl}"><button class="remove-photo" onclick="document.getElementById('${previewId}').innerHTML='';document.getElementById('${previewId}').classList.add('hidden')">Remove Photo</button>`;
+        }).catch(err => {
+            console.error('[Modal] photo processing failed', err);
+            preview.innerHTML = '<div class="photo-loading">Could not read that image.</div>';
+        });
+    },
+
+    _downscale(file) {
+        return new Promise((resolve, reject) => {
+            const url = URL.createObjectURL(file);
+            const img = new Image();
+            img.onload = () => {
+                URL.revokeObjectURL(url);
+                try {
+                    const scale = Math.min(1, this.PHOTO_MAX_EDGE / Math.max(img.width, img.height));
+                    const w = Math.max(1, Math.round(img.width * scale));
+                    const h = Math.max(1, Math.round(img.height * scale));
+                    const c = document.createElement('canvas');
+                    c.width = w; c.height = h;
+                    const ctx = c.getContext('2d');
+                    // JPEG has no alpha, so flatten onto white rather than
+                    // letting transparent PNGs come out black.
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, w, h);
+                    ctx.drawImage(img, 0, 0, w, h);
+                    resolve(c.toDataURL('image/jpeg', this.PHOTO_QUALITY));
+                } catch (e) { reject(e); }
+            };
+            img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('unreadable image')); };
+            img.src = url;
+        });
     },
 
     _getPhotoData(previewId) {

@@ -24,21 +24,64 @@ const App = {
         }
         this.setAuthBusy(false);
 
+        Sync.onStatus(s => this.renderSyncStatus(s));
+
         // React to sign-out from another tab, token expiry, etc.
         Auth.onChange(() => this.checkAuth());
-        this.checkAuth();
+        await this.checkAuth();
     },
 
+    // Coalesced for the same reason as Sync.hydrate(): onAuthStateChange and
+    // the submit handler both call this, and interleaving their DOM writes and
+    // hydration produced a half-populated app.
     checkAuth() {
+        if (this._checking) return this._checking;
+        this._checking = this._doCheckAuth().finally(() => { this._checking = null; });
+        return this._checking;
+    },
+
+    async _doCheckAuth() {
         const user = Auth.getUser();
         document.getElementById('auth-screen').classList.toggle('hidden', !!user);
         document.getElementById('app-screen').classList.toggle('hidden', !user);
-        if (user) {
-            PatternEngine.init();
-            this.render();
-        } else {
+
+        if (!user) {
             Game.unmount();
+            Sync.reset();
+            // Must clear, or signing back in as the same account matches the
+            // stale marker, skips hydration, and shows an empty house while
+            // the data sits safely on the server.
+            this._hydratedFor = null;
+            return;
         }
+
+        PatternEngine.init();
+
+        // Pull this user's data before the first render, otherwise the app
+        // flashes an empty house while the request is in flight.
+        if (!this._hydratedFor || this._hydratedFor !== user.id) {
+            this.render();                       // shows the loading state below
+            const okData = await Sync.hydrate();
+            this._hydratedFor = okData ? user.id : null;
+            ThemeEngine.apply(Store.getTheme());  // theme is per-account
+        }
+        this.render();
+    },
+
+    renderSyncStatus(status) {
+        const el = document.getElementById('sync-status');
+        if (!el) return;
+        const pending = Sync.pendingCount();
+        const map = {
+            idle:    { text: '', cls: '' },
+            syncing: { text: 'Saving…', cls: 'syncing' },
+            offline: { text: `Offline · ${pending} change${pending === 1 ? '' : 's'} pending`, cls: 'offline' },
+            error:   { text: `Not saved · ${pending} pending · retry`, cls: 'error' }
+        };
+        const s = map[status] || map.idle;
+        el.textContent = s.text;
+        el.className = 'sync-status ' + s.cls;
+        el.classList.toggle('hidden', !s.text);
     },
 
     setAuthBusy(busy, label) {
@@ -188,9 +231,37 @@ const App = {
         document.getElementById('overlay').classList.add('hidden');
     },
 
+    async retryHydrate() {
+        this._hydratedFor = null;
+        await this.checkAuth();
+    },
+
+    // Called from the sync-status chip when writes are stuck.
+    retrySync() {
+        Sync.flush();
+    },
+
     render() {
         const container = document.getElementById('list-container');
         const emptyState = document.getElementById('empty-state');
+        const user = Auth.getUser();
+
+        // While the first fetch for this account is in flight, show a loading
+        // state rather than "No Items Yet" — telling someone their house is
+        // empty when we simply haven't looked yet is worse than saying nothing.
+        if (user && this._hydratedFor !== user.id) {
+            emptyState.classList.add('hidden');
+            if (!(this.currentFilter === 'game' && Game.isLive())) {
+                Game.unmount();
+                container.innerHTML = Sync.status === 'error'
+                    ? `<div class="section"><div class="section-body"><div class="empty-note">
+                           Couldn't load your home. <button class="btn-small" onclick="App.retryHydrate()">Try again</button>
+                       </div></div></div>`
+                    : `<div class="section"><div class="section-body"><div class="empty-note">Loading your home…</div></div></div>`;
+            }
+            return;
+        }
+
         const items = Store.getItems();
         const rooms = Store.getRooms();
         const projects = Store.getProjects();
