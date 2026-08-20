@@ -561,7 +561,7 @@ const Modal = {
 
     // ===================== PROFILE =====================
     showProfile() {
-        const user = Store.getUser();
+        const user = Auth.getUser();
         const currentTheme = Store.getTheme();
         const themeList = Object.entries(THEMES).map(([name, t]) => `
             <button class="theme-option ${name === currentTheme ? 'active' : ''}" data-theme="${name}" onclick="Modal._selectTheme('${name}')">
@@ -593,10 +593,20 @@ const Modal = {
                     <div class="theme-grid">${themeList}</div>
                 </div>
                 <div class="form-section">
-                    <button class="btn-danger" onclick="if(confirm('Sign out?')){Store.wipeAll();Modal.close();App.checkAuth()}">Sign Out</button>
+                    <button class="btn-secondary" onclick="Modal.signOut()">Sign Out</button>
+                    <p class="form-note">Your rooms and items stay on this device.</p>
                 </div>
             </div>
         `, () => App.render());
+    },
+
+    // Ends the session only. This used to call Store.wipeAll(), which deleted
+    // every room, item and project the user owned.
+    async signOut() {
+        if (!confirm('Sign out?')) return;
+        await Auth.signOut();
+        this.close();
+        App.checkAuth();
     },
 
     // ===================== HELPERS =====================

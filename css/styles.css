@@ -156,6 +156,26 @@ body {
 .auth-error {
     color: var(--danger);
     font-size: 13px;
+    line-height: 1.45;
+}
+
+/* Same element, used for non-error feedback such as "check your email". */
+.auth-error.auth-notice {
+    color: var(--text);
+    background: rgba(var(--accent-rgb), 0.10);
+    border: 1px solid rgba(var(--accent-rgb), 0.28);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+}
+
+.auth-form.busy {
+    opacity: 0.75;
+    pointer-events: none;
+}
+
+.auth-form button[disabled] {
+    opacity: 0.8;
+    cursor: progress;
 }
 
 .btn-primary {

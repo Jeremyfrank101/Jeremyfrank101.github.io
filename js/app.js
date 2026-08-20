@@ -3,15 +3,34 @@
 const App = {
     currentFilter: 'all',
 
-    init() {
+    async init() {
         ThemeEngine.init();
         Modal.init();
         this.bindEvents();
+
+        if (!Auth.configured()) {
+            this.showAuthNotice('This build has no Supabase key configured, so sign-in is disabled.', true);
+            return;
+        }
+
+        // Restoring a session is a network round trip; hold the auth form back
+        // until we know, so a returning user doesn't see a login flash.
+        this.setAuthBusy(true, 'Checking your session…');
+        try {
+            await Auth.restore();
+        } catch (err) {
+            console.error('[App] session restore failed', err);
+            this.showAuthNotice('Could not reach the authentication server.', true);
+        }
+        this.setAuthBusy(false);
+
+        // React to sign-out from another tab, token expiry, etc.
+        Auth.onChange(() => this.checkAuth());
         this.checkAuth();
     },
 
     checkAuth() {
-        const user = Store.getUser();
+        const user = Auth.getUser();
         document.getElementById('auth-screen').classList.toggle('hidden', !!user);
         document.getElementById('app-screen').classList.toggle('hidden', !user);
         if (user) {
@@ -19,15 +38,37 @@ const App = {
             this.render();
         } else {
             Game.unmount();
-            this.prefillDevCredentials();
         }
     },
 
-    // DEV ONLY: fills the sign-in form with the seeded admin account so the app is
-    // one click away. Remove alongside DEV_ACCOUNT in store.js.
-    prefillDevCredentials() {
-        document.getElementById('auth-email').value = DEV_ACCOUNT.email;
-        document.getElementById('auth-password').value = DEV_ACCOUNT.password;
+    setAuthBusy(busy, label) {
+        const btn = document.getElementById('auth-submit');
+        const form = document.getElementById('auth-form');
+        if (!btn || !form) return;
+        btn.disabled = busy;
+        form.classList.toggle('busy', busy);
+        if (busy && label) {
+            btn.dataset.idleLabel = btn.dataset.idleLabel || btn.textContent;
+            btn.textContent = label;
+        } else if (!busy && btn.dataset.idleLabel) {
+            btn.textContent = btn.dataset.idleLabel;
+            delete btn.dataset.idleLabel;
+        }
+    },
+
+    showAuthNotice(message, isError) {
+        const el = document.getElementById('auth-error');
+        if (!el) return;
+        el.textContent = message;
+        el.classList.toggle('auth-notice', !isError);
+        el.classList.remove('hidden');
+    },
+
+    clearAuthNotice() {
+        const el = document.getElementById('auth-error');
+        if (!el) return;
+        el.classList.add('hidden');
+        el.classList.remove('auth-notice');
     },
 
     bindEvents() {
@@ -42,14 +83,18 @@ const App = {
             document.getElementById('auth-submit').textContent = isSignUp ? 'Create Account' : 'Sign In';
             document.getElementById('auth-subtitle').textContent = isSignUp ? 'Create your account' : 'Welcome back';
             document.getElementById('auth-toggle').textContent = isSignUp ? 'Already have an account? Sign in' : 'New here? Create an account';
-            document.getElementById('auth-error').classList.add('hidden');
+            this.clearAuthNotice();
         });
 
-        authForm.addEventListener('submit', (e) => {
+        authForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const email = document.getElementById('auth-email').value;
+            if (!Auth.configured()) return;
+
+            const email = document.getElementById('auth-email').value.trim();
             const password = document.getElementById('auth-password').value;
-            const errorEl = document.getElementById('auth-error');
+
+            this.clearAuthNotice();
+            this.setAuthBusy(true, isSignUp ? 'Creating account…' : 'Signing in…');
 
             try {
                 if (isSignUp) {
@@ -58,15 +103,26 @@ const App = {
                     const username = document.getElementById('auth-username').value.trim();
                     const name = document.getElementById('auth-name').value.trim();
                     if (!username) throw new Error('Username is required.');
-                    Store.signUp(username, name, email, password);
+
+                    const result = await Auth.signUp(username, name, email, password);
+                    if (result.needsConfirmation) {
+                        // The project requires email confirmation, so there is no
+                        // session yet. Say so rather than silently doing nothing.
+                        authForm.reset();
+                        this.showAuthNotice(
+                            `Account created. Check ${result.email} for a confirmation link, then sign in.`,
+                            false
+                        );
+                        return;
+                    }
                 } else {
-                    Store.signIn(email, password);
+                    await Auth.signIn(email, password);
                 }
-                errorEl.classList.add('hidden');
                 this.checkAuth();
             } catch (err) {
-                errorEl.textContent = err.message;
-                errorEl.classList.remove('hidden');
+                this.showAuthNotice(err.message, true);
+            } finally {
+                this.setAuthBusy(false);
             }
         });
 

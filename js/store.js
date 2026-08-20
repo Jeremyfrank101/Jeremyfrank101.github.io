@@ -1,15 +1,7 @@
-// store.js — localStorage-based data layer mirroring SwiftData models
-
-// DEV ONLY: seeded admin account so the login form can be pre-filled while building.
-// There is no server — auth is a plain localStorage comparison — so this is a
-// convenience shim, not a credential. Delete this block, the branch in signIn(),
-// and App.prefillDevCredentials() before treating this login as real.
-const DEV_ACCOUNT = {
-    username: 'admin',
-    name: 'Admin',
-    email: 'admin@cozyhome.local',
-    password: 'cozyadmin'
-};
+// store.js — localStorage data layer for rooms, items and projects.
+//
+// Authentication lives in auth.js (Supabase); this file no longer knows
+// anything about users or passwords.
 
 const Store = {
     _key: 'cozyhome_data',
@@ -27,40 +19,7 @@ const Store = {
     },
 
     _default() {
-        return { user: null, rooms: [], items: [], projects: [], diyItems: [], theme: 'California Cabana' };
-    },
-
-    // ---------- Auth ----------
-
-    getUser() {
-        return this._load().user;
-    },
-
-    signIn(email, password) {
-        const data = this._load();
-        if (!data.user) {
-            // DEV ONLY: let the seeded admin account sign in on a fresh browser.
-            if (email === DEV_ACCOUNT.email && password === DEV_ACCOUNT.password) {
-                return this.signUp(DEV_ACCOUNT.username, DEV_ACCOUNT.name, DEV_ACCOUNT.email, DEV_ACCOUNT.password);
-            }
-            throw new Error('No account found. Please sign up.');
-        }
-        if (data.user.email !== email || data.user.password !== password)
-            throw new Error('Invalid email or password.');
-        return data.user;
-    },
-
-    signUp(username, name, email, password) {
-        const data = this._load();
-        data.user = { id: crypto.randomUUID(), username, name, email, password };
-        this._save(data);
-        return data.user;
-    },
-
-    signOut() {
-        const data = this._load();
-        data.user = null;
-        this._save(data);
+        return { rooms: [], items: [], projects: [], diyItems: [], theme: 'California Cabana' };
     },
 
     // ---------- Theme ----------
@@ -240,13 +199,14 @@ const Store = {
         return room.name;
     },
 
+    // Destroys the local inventory. Signing out must NOT call this — that was
+    // the old behaviour and it silently deleted everything the user owned.
     wipeAll() {
         const data = this._load();
         data.rooms = [];
         data.items = [];
         data.projects = [];
         data.diyItems = [];
-        data.user = null;
         this._save(data);
     }
 };
