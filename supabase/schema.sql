@@ -140,26 +140,29 @@ revoke all on public.rooms, public.items, public.projects,
 -- The bucket is private. Objects are addressed as <user_id>/<kind>/<id>, and
 -- the policy below checks the first path segment against auth.uid(), so one
 -- user's photos are unreachable to another even with a valid session.
+--
+-- Note the name: this project already contains a generic `photos` bucket
+-- belonging to another app, with anon read/write policies. An earlier version
+-- of this file reused it and, worse, used `on conflict do update`, which
+-- rewrote that bucket's configuration and took it private — breaking the other
+-- app's public image URLs. Hence a dedicated bucket, and `do nothing`.
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
-    'photos', 'photos', false, 8388608,
+    'cozyhome-photos', 'cozyhome-photos', false, 8388608,
     array['image/jpeg', 'image/png', 'image/webp', 'image/gif']
 )
-on conflict (id) do update
-    set public             = excluded.public,
-        file_size_limit    = excluded.file_size_limit,
-        allowed_mime_types = excluded.allowed_mime_types;
+on conflict (id) do nothing;
 
-drop policy if exists photos_own_objects on storage.objects;
-create policy photos_own_objects on storage.objects
+drop policy if exists cozyhome_photos_own_objects on storage.objects;
+create policy cozyhome_photos_own_objects on storage.objects
     for all
     to authenticated
     using (
-        bucket_id = 'photos'
+        bucket_id = 'cozyhome-photos'
         and (storage.foldername(name))[1] = auth.uid()::text
     )
     with check (
-        bucket_id = 'photos'
+        bucket_id = 'cozyhome-photos'
         and (storage.foldername(name))[1] = auth.uid()::text
     );

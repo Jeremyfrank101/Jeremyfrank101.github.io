@@ -282,7 +282,10 @@ const Sync = {
     // once loaded, or the raw data URL while an upload is still pending. Views
     // read `photo` and therefore needed no changes.
 
-    BUCKET: 'photos',
+    // A dedicated bucket, not the shared `photos` one. That bucket belongs to
+    // another app in this project and carries anon read/write policies, so
+    // anything CozyHome put there would have been world-readable.
+    BUCKET: 'cozyhome-photos',
     SIGNED_TTL: 60 * 60 * 8,   // re-signed on every hydrate anyway
 
     isDataUrl(v) { return typeof v === 'string' && v.startsWith('data:'); },
