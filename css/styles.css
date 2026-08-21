@@ -168,6 +168,89 @@ body {
     padding: 10px 12px;
 }
 
+/* Sharing */
+
+.share-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: none;
+    padding: 2px 8px;
+    border-radius: 50px;
+    background: rgba(var(--accent-secondary-rgb), 0.15);
+    color: var(--accent-secondary);
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.share-badge.incoming {
+    background: rgba(var(--accent-rgb), 0.15);
+    color: var(--accent);
+}
+
+.share-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
+.share-row,
+.share-note {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--card-bg);
+    font-size: 14px;
+}
+
+.share-note {
+    align-items: flex-start;
+    line-height: 1.45;
+    margin-bottom: 10px;
+}
+
+.share-avatar { font-size: 16px; flex-shrink: 0; }
+
+.share-who {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.share-remove { flex-shrink: 0; }
+
+.share-invite {
+    display: flex;
+    gap: 8px;
+}
+
+.share-invite input {
+    flex: 1;
+    min-width: 0;
+}
+
+.share-invite .btn-secondary {
+    flex-shrink: 0;
+    width: auto;
+    padding: 0 18px;
+}
+
+.share-error {
+    color: var(--danger);
+    font-size: 13px;
+    line-height: 1.4;
+    margin-top: 8px;
+}
+
 /* Home grouping header in the Room tab */
 
 .home-group-header {

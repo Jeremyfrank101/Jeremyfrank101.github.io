@@ -30,7 +30,8 @@ const Sync = {
     // ---------- lifecycle ----------
 
     reset() {
-        this.cache = { homes: [], rooms: [], items: [], projects: [], diyItems: [], theme: 'California Cabana' };
+        this.cache = { homes: [], rooms: [], items: [], projects: [], diyItems: [],
+                       shares: [], people: {}, theme: 'California Cabana' };
     },
 
     onStatus(fn) { this._listeners.push(fn); },
@@ -60,16 +61,17 @@ const Sync = {
         this._setStatus('syncing');
 
         try {
-            const [homes, rooms, items, projects, diyItems, prefs] = await Promise.all([
+            const [homes, rooms, items, projects, diyItems, prefs, shares] = await Promise.all([
                 this.client.from('homes').select('*'),
                 this.client.from('rooms').select('*'),
                 this.client.from('items').select('*'),
                 this.client.from('projects').select('*'),
                 this.client.from('diy_items').select('*'),
-                this.client.from('preferences').select('*').maybeSingle()
+                this.client.from('preferences').select('*').maybeSingle(),
+                this.client.from('shares').select('*')
             ]);
 
-            const firstError = [homes, rooms, items, projects, diyItems, prefs].find(r => r.error);
+            const firstError = [homes, rooms, items, projects, diyItems, prefs, shares].find(r => r.error);
             if (firstError) throw firstError.error;
 
             this.cache.homes    = (homes.data    || []).map(this.fromHome);
@@ -77,6 +79,7 @@ const Sync = {
             this.cache.items    = (items.data    || []).map(this.fromItem);
             this.cache.projects = (projects.data || []).map(this.fromProject);
             this.cache.diyItems = (diyItems.data || []).map(this.fromDIY);
+            this.cache.shares   = (shares.data   || []).map(this.fromShare);
             this.cache.theme    = prefs.data?.theme || 'California Cabana';
 
             // How much this account already had on the server, captured before
@@ -86,6 +89,7 @@ const Sync = {
                                  this.cache.items.length + this.cache.projects.length +
                                  this.cache.diyItems.length;
 
+            await this.loadPeople();            // names for anyone we share with
             await this._resolvePhotoUrls();     // turn stored paths into <img> urls
             await this.flush();                 // drain anything queued earlier
             await this._migrateLegacyIfNeeded(fetchedCount);
@@ -350,12 +354,72 @@ const Sync = {
     // Postgres is snake_case; the app has always used camelCase. Convert at
     // the boundary rather than renaming fields across every view.
 
+    fromShare(s) {
+        return { id: s.id, resourceType: s.resource_type, resourceId: s.resource_id,
+                 ownerId: s.owner_id, sharedWithId: s.shared_with_id, createdAt: s.created_at };
+    },
+
+    // ---------- sharing ----------
+    //
+    // Shares are written directly rather than through the offline queue: the
+    // caller needs the result (did the email resolve? did the insert pass RLS?)
+    // and a silently queued share would look like it worked when it had not.
+
+    async lookupUser(email) {
+        const { data, error } = await this.client
+            .rpc('find_user_by_email', { p_email: email });
+        if (error) throw new Error(error.message);
+        const row = Array.isArray(data) ? data[0] : data;
+        return row || null;
+    },
+
+    async shareResource(resourceType, resourceId, email) {
+        const person = await this.lookupUser(email);
+        if (!person) {
+            throw new Error(`No CozyHome account uses ${email}. They need to sign up first.`);
+        }
+        const { data, error } = await this.client.from('shares').insert({
+            resource_type: resourceType,
+            resource_id: resourceId,
+            owner_id: Auth.getUser().id,
+            shared_with_id: person.user_id
+        }).select().single();
+
+        if (error) {
+            if (error.code === '23505') throw new Error('Already shared with that person.');
+            throw new Error(error.message);
+        }
+        this.cache.shares.push(this.fromShare(data));
+        this.cache.people[person.user_id] = { email: person.email, username: person.username };
+        return person;
+    },
+
+    async unshare(shareId) {
+        const { error } = await this.client.from('shares').delete().eq('id', shareId);
+        if (error) throw new Error(error.message);
+        this.cache.shares = this.cache.shares.filter(s => s.id !== shareId);
+    },
+
+    // Names for everyone involved in a share, for display.
+    async loadPeople() {
+        const ids = new Set();
+        this.cache.shares.forEach(s => { ids.add(s.ownerId); ids.add(s.sharedWithId); });
+        ids.delete(Auth.getUser()?.id);
+        if (!ids.size) return;
+        const { data, error } = await this.client
+            .from('profiles').select('user_id,email,username').in('user_id', [...ids]);
+        if (error) { console.warn('[Sync] could not load collaborator profiles', error); return; }
+        (data || []).forEach(p => {
+            this.cache.people[p.user_id] = { email: p.email, username: p.username };
+        });
+    },
+
     toHome(h) {
         return { id: h.id, name: h.name,
                  photo: h.photoPath || null, created_at: h.createdAt };
     },
     fromHome(h) {
-        return { id: h.id, name: h.name,
+        return { id: h.id, name: h.name, ownerId: h.user_id,
                  photoPath: h.photo, photo: null, createdAt: h.created_at };
     },
 
@@ -366,7 +430,7 @@ const Sync = {
     },
     fromRoom(r) {
         return { id: r.id, name: r.name, parentRoomId: r.parent_room_id,
-                 homeId: r.home_id,
+                 homeId: r.home_id, ownerId: r.user_id,
                  photoPath: r.photo, photo: null, createdAt: r.created_at };
     },
 
@@ -377,7 +441,7 @@ const Sync = {
     },
     fromItem(i) {
         return { id: i.id, name: i.name, desc: i.description || '',
-                 itemType: i.item_type, roomId: i.room_id,
+                 itemType: i.item_type, roomId: i.room_id, ownerId: i.user_id,
                  photoPath: i.photo, photo: null, createdAt: i.created_at };
     },
 
@@ -395,7 +459,8 @@ const Sync = {
                  isCompleted: p.is_completed, completedAt: p.completed_at,
                  roomIds: p.room_ids || [], itemIds: p.item_ids || [],
                  options: p.options || [], tasks: p.tasks || [],
-                 isDIY: p.is_diy, photoPath: p.photo, photo: null, createdAt: p.created_at };
+                 isDIY: p.is_diy, ownerId: p.user_id,
+                 photoPath: p.photo, photo: null, createdAt: p.created_at };
     },
 
     toDIY(d) {

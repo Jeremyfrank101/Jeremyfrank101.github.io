@@ -97,10 +97,11 @@ const Modal = {
                     <div class="form-info-row"><span>Rooms</span><span class="badge">${rooms.length}</span></div>
                     ${rooms.length ? `<div class="picker-list">${rooms.map(r => `<div class="picker-item"><span>🏠 ${this._esc(r.name)}</span></div>`).join('')}</div>` : '<p class="form-note">No rooms in this home yet.</p>'}
                 </div>
-                <div class="form-section">
+                ${this._shareSection('home', homeId, home)}
+                ${Store.isMine(home) ? `<div class="form-section">
                     <button class="btn-danger" id="delete-home-btn">Delete Home</button>
                     ${rooms.length ? `<p class="danger-note">The ${rooms.length} room${rooms.length === 1 ? '' : 's'} in this home will be kept and moved to “No Home”.</p>` : ''}
-                </div>
+                </div>` : ''}
             </div>
         `, () => App.render());
 
@@ -115,12 +116,15 @@ const Modal = {
             this.close();
         });
 
-        document.getElementById('delete-home-btn').addEventListener('click', () => {
+        const delBtn = document.getElementById('delete-home-btn');
+        if (delBtn) delBtn.addEventListener('click', () => {
             if (confirm(`Delete "${home.name}"? Its rooms will be kept and moved to “No Home”.`)) {
                 Store.deleteHome(homeId);
                 this.close();
             }
         });
+
+        this._bindShareSection('home', homeId, () => { this.close(); setTimeout(() => this.editHome(homeId), 280); });
     },
 
     // "Convert to Sub-Room" for a top-level room. When the conversion is not
@@ -159,6 +163,88 @@ const Modal = {
             return;
         }
         this.close();
+    },
+
+    // ===================== SHARING =====================
+    //
+    // Rendered inside the Home and Project modals. Owners can invite and
+    // revoke; someone who was shared with sees who shared it and can leave.
+
+    _shareSection(resourceType, resourceId, record) {
+        const label = resourceType === 'home' ? 'home' : 'project';
+        const incoming = Store.getIncomingShare(resourceType, resourceId);
+
+        if (incoming) {
+            return `<div class="form-section">
+                <label>Shared With You</label>
+                <div class="share-note">
+                    <span class="share-avatar">👥</span>
+                    <span>${this._esc(Store.personName(incoming.ownerId))} shared this ${label} with you. Anything you add is visible to both of you.</span>
+                </div>
+                <button class="btn-secondary" id="leave-share-btn" data-share="${incoming.id}">Leave this ${label}</button>
+            </div>`;
+        }
+
+        if (!Store.isMine(record)) return '';
+
+        const shares = Store.getSharesFor(resourceType, resourceId);
+        return `<div class="form-section">
+            <label>Shared With</label>
+            ${shares.length ? `<div class="share-list">${shares.map(s => `
+                <div class="share-row">
+                    <span class="share-avatar">👤</span>
+                    <span class="share-who">${this._esc(Store.personName(s.sharedWithId))}</span>
+                    <button class="btn-small share-remove" data-unshare="${s.id}">Remove</button>
+                </div>`).join('')}</div>`
+                : '<p class="form-note">Not shared with anyone yet.</p>'}
+            <div class="share-invite">
+                <input type="email" id="share-email" placeholder="their@email.com" autocomplete="off">
+                <button class="btn-secondary" id="share-btn">Share</button>
+            </div>
+            <p class="share-error hidden" id="share-error"></p>
+            <p class="form-note">They need a CozyHome account. Both of you can see and add to this ${label}${resourceType === 'home' ? ', its rooms and everything in them' : ' and its materials'}.</p>
+        </div>`;
+    },
+
+    _bindShareSection(resourceType, resourceId, reopen) {
+        const err = document.getElementById('share-error');
+        const showErr = (m) => { if (!err) return; err.textContent = m; err.classList.remove('hidden'); };
+
+        const shareBtn = document.getElementById('share-btn');
+        if (shareBtn) shareBtn.addEventListener('click', async () => {
+            const input = document.getElementById('share-email');
+            const email = (input.value || '').trim();
+            if (!email) return;
+            shareBtn.disabled = true;
+            shareBtn.textContent = 'Sharing…';
+            if (err) err.classList.add('hidden');
+            try {
+                await Store.shareResource(resourceType, resourceId, email);
+                reopen();
+            } catch (e) {
+                showErr(e.message);
+                shareBtn.disabled = false;
+                shareBtn.textContent = 'Share';
+            }
+        });
+
+        document.querySelectorAll('[data-unshare]').forEach(b =>
+            b.addEventListener('click', async () => {
+                b.disabled = true;
+                try { await Store.unshare(b.dataset.unshare); reopen(); }
+                catch (e) { showErr(e.message); b.disabled = false; }
+            }));
+
+        const leaveBtn = document.getElementById('leave-share-btn');
+        if (leaveBtn) leaveBtn.addEventListener('click', async () => {
+            if (!confirm('Leave this? You will stop seeing it, but nothing is deleted for the owner.')) return;
+            leaveBtn.disabled = true;
+            try {
+                await Store.unshare(leaveBtn.dataset.share);
+                this.close();
+                await App.retryHydrate();     // it is no longer ours to show
+            } catch (e) { showErr(e.message); leaveBtn.disabled = false; }
+        });
     },
 
     // Reusable <select> of homes, used by both room modals.
@@ -630,9 +716,10 @@ const Modal = {
                         ? `<button class="btn-secondary" onclick="Store.updateProject('${projectId}',{isCompleted:false,completedAt:null});Modal.editProject('${projectId}')">↩ Reopen Project</button>`
                         : `<button class="btn-completed" onclick="Store.updateProject('${projectId}',{isCompleted:true,completedAt:new Date().toISOString()});Modal.editProject('${projectId}')">✓ Mark as Completed</button>`}
                 </div>
-                <div class="form-section">
+                ${this._shareSection('project', projectId, project)}
+                ${Store.isMine(project) ? `<div class="form-section">
                     <button class="btn-danger" id="delete-proj-btn">Delete Project</button>
-                </div>
+                </div>` : ''}
             </div>
         `, () => App.render());
 
@@ -665,12 +752,15 @@ const Modal = {
             if (e.key === 'Enter') { e.preventDefault(); Modal._quickAddTask(projectId); }
         });
 
-        document.getElementById('delete-proj-btn').addEventListener('click', () => {
+        const delProj = document.getElementById('delete-proj-btn');
+        if (delProj) delProj.addEventListener('click', () => {
             if (confirm(`Delete "${project.name}"? This cannot be undone.`)) {
                 Store.deleteProject(projectId);
                 this.close();
             }
         });
+
+        this._bindShareSection('project', projectId, () => { this.close(); setTimeout(() => this.editProject(projectId), 280); });
     },
 
     // ===================== EDIT DIY ITEM =====================

@@ -80,6 +80,23 @@ const THEMES = {
         cardBg: [245, 240, 235],
         pageBg: [240, 235, 227],
         headerGrad: ['rgb(153,51,46)', 'rgb(38,64,102)'],
+    },
+    'Rosewater': {
+        key: 'rosewater',
+        subtitle: 'Soft blush & warm petals',
+        icon: '🌸',
+        pattern: 'ripples',
+        patternOpacity: 0.045,
+        accent: [214, 84, 130],
+        accentSecondary: [166, 106, 186],
+        // Muted to sit beside the pink rather than fight it.
+        completed: [92, 168, 130],
+        budget: [92, 168, 130],
+        warning: [230, 150, 92],
+        danger: [201, 60, 78],
+        cardBg: [255, 245, 248],
+        pageBg: [252, 236, 241],
+        headerGrad: ['rgb(226,110,150)', 'rgb(176,116,196)'],
     }
 };
 

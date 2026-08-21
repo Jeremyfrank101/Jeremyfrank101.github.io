@@ -35,7 +35,7 @@ const Views = {
                     return `<div class="list-row" onclick="Modal.editHome('${h.id}')">
                         <div class="row-thumb">${h.photo ? `<img src="${h.photo}" style="width:100%;height:100%;object-fit:cover">` : '<span>🏡</span>'}</div>
                         <div class="row-info">
-                            <div class="row-title">${this._esc(h.name)}</div>
+                            <div class="row-title">${this._esc(h.name)} ${this._shareBadge('home', h.id, h)}</div>
                             <div class="row-subtitle"><span>${n} room${n !== 1 ? 's' : ''}</span></div>
                         </div>
                     </div>`;
@@ -137,6 +137,7 @@ const Views = {
                 html += `<div class="home-group-header" ${home ? `onclick="Modal.editHome('${home.id}')"` : ''}>
                     ${home && home.photo ? `<img src="${home.photo}" class="home-photo">` : `<span class="home-icon">${home ? '🏡' : '📦'}</span>`}
                     <span class="home-name">${home ? this._esc(home.name) : 'No Home'}</span>
+                    ${home ? this._shareBadge('home', home.id, home) : ''}
                     <span class="badge">${rooms.length}</span>
                     ${home ? '<span class="section-edit">✏️</span>' : ''}
                 </div>`;
@@ -343,6 +344,20 @@ const Views = {
         </div>`;
     },
 
+    // A badge showing that something is shared, and which way.
+    _shareBadge(type, id, record) {
+        const incoming = Store.getIncomingShare(type, id);
+        if (incoming) {
+            return `<span class="share-badge incoming" title="Shared with you by ${this._esc(Store.personName(incoming.ownerId))}">👥 from ${this._esc(Store.personName(incoming.ownerId))}</span>`;
+        }
+        const out = Store.getSharesFor(type, id);
+        if (out.length) {
+            const who = out.length === 1 ? Store.personName(out[0].sharedWithId) : `${out.length} people`;
+            return `<span class="share-badge" title="Shared with ${this._esc(who)}">👥 shared</span>`;
+        }
+        return '';
+    },
+
     // ---- Row renderers ----
 
     _itemRow(item) {
@@ -378,6 +393,7 @@ const Views = {
                 <div class="row-title">
                     ${this._esc(project.name)}
                     ${project.isCompleted ? '<span class="completed-badge">✓</span>' : ''}
+                    ${this._shareBadge('project', project.id, project)}
                 </div>
                 <div class="row-subtitle">
                     ${project.isDIY ? '<span class="diy-badge">DIY</span>' : ''}

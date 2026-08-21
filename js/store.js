@@ -59,6 +59,50 @@ const Store = {
         if (Auth.getUser()) Sync.enqueue({ type: 'theme', theme: name });
     },
 
+    // ---------- Sharing ----------
+
+    myId() { return Auth.getUser()?.id || null; },
+
+    isMine(record) {
+        // Rows created before ownerId was tracked, and rows created locally
+        // this session, are ours by construction.
+        return !record || !record.ownerId || record.ownerId === this.myId();
+    },
+
+    // Shares where I am the owner — people I invited in.
+    getSharesFor(resourceType, resourceId) {
+        return this._data().shares.filter(s =>
+            s.resourceType === resourceType &&
+            s.resourceId === resourceId &&
+            s.ownerId === this.myId());
+    },
+
+    // The share that grants me access to something someone else owns.
+    getIncomingShare(resourceType, resourceId) {
+        return this._data().shares.find(s =>
+            s.resourceType === resourceType &&
+            s.resourceId === resourceId &&
+            s.sharedWithId === this.myId());
+    },
+
+    isSharedOut(resourceType, resourceId) {
+        return this.getSharesFor(resourceType, resourceId).length > 0;
+    },
+
+    personName(userId) {
+        const p = this._data().people[userId];
+        if (!p) return 'someone';
+        return p.username || p.email;
+    },
+
+    shareResource(resourceType, resourceId, email) {
+        return Sync.shareResource(resourceType, resourceId, email);
+    },
+
+    unshare(shareId) {
+        return Sync.unshare(shareId);
+    },
+
     // ---------- Homes ----------
 
     getHomes() {

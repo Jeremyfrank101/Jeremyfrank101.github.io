@@ -153,6 +153,16 @@ revoke all on public.homes, public.rooms, public.items, public.projects,
                 public.diy_items, public.preferences
     from anon;
 
+-- -------------------------------------------------------------- sharing ----
+--
+-- A Home or Project can be shared with another account, who then sees all of
+-- its sub-data and can contribute. See supabase/sharing.sql for the full
+-- definition; it is kept in its own file because it is long and self-contained.
+--
+-- Apply it after this file:
+--   psql < supabase/schema.sql
+--   psql < supabase/sharing.sql
+
 -- --------------------------------------------------------- photo storage ----
 --
 -- The photo columns above hold a Storage path, not image bytes. Keeping
