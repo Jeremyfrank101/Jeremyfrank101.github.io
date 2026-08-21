@@ -196,10 +196,12 @@ const Iliad = {
     _buildDOM() {
         this.container.innerHTML = `
         <div class="il-root">
-            <canvas class="il-canvas" width="${this.W}" height="${this.H}"></canvas>
+            <div class="il-stage"><canvas class="il-canvas" width="${this.W}" height="${this.H}"></canvas></div>
             <div class="il-ui"></div>
         </div>`;
         this.dom = {
+            root: this.container.querySelector('.il-root'),
+            stage: this.container.querySelector('.il-stage'),
             canvas: this.container.querySelector('.il-canvas'),
             ui: this.container.querySelector('.il-ui')
         };
@@ -484,6 +486,9 @@ const Iliad = {
             board:  () => this.uiBoard()
         }[this.scene];
         this.dom.ui.innerHTML = f ? f() : '';
+        // Menus want the full width; a battle wants the split layout.
+        this.dom.root.classList.toggle('il-menu', this.scene !== 'battle');
+        this._fitW = null;   // force a re-measure, the box just changed
         this.bindUI();
     },
 
@@ -818,13 +823,22 @@ const Iliad = {
         }
     },
 
+    // Scale to the box flexbox actually handed the stage, so the canvas and the
+    // controls always share one screen instead of the page growing a scrollbar.
     _fit() {
-        const cw = this.container.clientWidth, ch = this.container.clientHeight;
-        if (!cw || !ch) return;
-        // Leave room for the HUD and the move buttons; the panel scrolls if not.
-        const s = Math.max(1, Math.min((cw - 24) / this.W, (ch * 0.34) / this.H));
-        this.dom.canvas.style.width = Math.floor(this.W * s) + 'px';
-        this.dom.canvas.style.height = Math.floor(this.H * s) + 'px';
+        const box = this.dom.stage;
+        if (!box) return;
+        const cw = box.clientWidth - 8, ch = box.clientHeight - 8;
+        if (cw <= 0 || ch <= 0) return;
+        const raw = Math.min(cw / this.W, ch / this.H);
+        // Whole-number scaling keeps the pixels square; below 1:1 we have to
+        // accept a fractional scale rather than crop the battlefield.
+        const s = raw >= 1 ? Math.floor(raw) : raw;
+        const w = Math.floor(this.W * s), h = Math.floor(this.H * s);
+        if (this._fitW === w && this._fitH === h) return;
+        this._fitW = w; this._fitH = h;
+        this.dom.canvas.style.width = w + 'px';
+        this.dom.canvas.style.height = h + 'px';
     },
 
     _loop() {
