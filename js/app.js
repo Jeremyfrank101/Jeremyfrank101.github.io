@@ -4,6 +4,9 @@ const App = {
     currentFilter: 'all',
 
     async init() {
+        // Apply the device's remembered theme before anything renders, so the
+        // login screen keeps the look the user chose rather than flashing the
+        // default while the session and preferences load.
         ThemeEngine.init();
         Modal.init();
         this.bindEvents();

@@ -165,6 +165,89 @@ const Modal = {
         this.close();
     },
 
+    // ===================== PROJECT NOTES =====================
+    //
+    // A shared log of what has been done, newest first, each entry stamped
+    // with its author and time. Everyone with access to the project sees the
+    // whole list; you can only delete your own.
+
+    _notesSection(projectId) {
+        const notes = Store.getNotes(projectId);
+        return `<div class="form-section">
+            <div class="form-info-row"><span>Notes</span><span class="badge">${notes.length}</span></div>
+
+            <div class="note-compose">
+                <textarea id="note-body" rows="2" placeholder="What did you do? e.g. contacted three suppliers"></textarea>
+                <button class="btn-secondary" id="add-note-btn">Add Note</button>
+            </div>
+            <p class="share-error hidden" id="note-error"></p>
+
+            ${notes.length ? `<div class="note-list">${notes.map(n => `
+                <div class="note">
+                    <div class="note-head">
+                        <span class="note-author">${this._esc(Store.isMine({ ownerId: n.userId }) ? 'You' : Store.personName(n.userId))}</span>
+                        <span class="note-time">${this._noteTime(n.createdAt)}</span>
+                        ${n.userId === Store.myId() ? `<button class="btn-small btn-danger-small note-del" data-note="${n.id}" title="Delete note">✕</button>` : ''}
+                    </div>
+                    <div class="note-body">${this._esc(n.body)}</div>
+                </div>`).join('')}</div>`
+              : '<p class="form-note">No notes yet. Add one as work happens and everyone on this project will see it.</p>'}
+        </div>`;
+    },
+
+    // Absolute date and time — a work log needs the actual timestamp, not
+    // "3 days ago", but recent entries also get a friendly prefix.
+    _noteTime(iso) {
+        const d = new Date(iso);
+        const now = new Date();
+        const sameDay = d.toDateString() === now.toDateString();
+        const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
+        const wasYesterday = d.toDateString() === yesterday.toDateString();
+        const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+        if (sameDay) return `Today, ${time}`;
+        if (wasYesterday) return `Yesterday, ${time}`;
+        return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) + ', ' + time;
+    },
+
+    _bindNotes(projectId) {
+        const err = document.getElementById('note-error');
+        const showErr = (m) => { if (err) { err.textContent = m; err.classList.remove('hidden'); } };
+        const reopen = () => { this.close(); setTimeout(() => this.editProject(projectId), 280); };
+
+        const body = document.getElementById('note-body');
+        const btn = document.getElementById('add-note-btn');
+
+        const submit = async () => {
+            const text = (body.value || '').trim();
+            if (!text) return;
+            btn.disabled = true;
+            btn.textContent = 'Adding…';
+            if (err) err.classList.add('hidden');
+            try {
+                await Store.addNote(projectId, text);
+                reopen();
+            } catch (e) {
+                showErr(e.message);
+                btn.disabled = false;
+                btn.textContent = 'Add Note';
+            }
+        };
+
+        if (btn) btn.addEventListener('click', submit);
+        // Enter submits, Shift+Enter makes a new line.
+        if (body) body.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
+        });
+
+        document.querySelectorAll('.note-del').forEach(b =>
+            b.addEventListener('click', async () => {
+                if (!confirm('Delete this note?')) return;
+                b.disabled = true;
+                try { await Store.deleteNote(b.dataset.note, projectId); reopen(); }
+                catch (e) { showErr(e.message); b.disabled = false; }
+            }));
+    },
+
     // ===================== SHARING =====================
     //
     // Rendered inside the Home and Project modals. Owners can invite and
@@ -247,6 +330,31 @@ const Modal = {
         });
     },
 
+    // Default a new room into the home you share, so household objects are
+    // visible to your partner without any extra step.
+    _defaultHomeId() {
+        const homes = Store.getHomes();
+        if (!homes.length) return null;
+        const shared = homes.find(h =>
+            Store.isSharedOut('home', h.id) || Store.getIncomingShare('home', h.id));
+        if (shared) return shared.id;
+        return homes.length === 1 ? homes[0].id : null;
+    },
+
+    // "Keep private for me" — only offered when there is someone to hide
+    // things from (or the record is already private, so it can be undone).
+    _privacyToggle(checked) {
+        if (!Store.sharingPartners().length && !checked) return '';
+        return `<div class="form-section">
+                    <label class="privacy-toggle"><input type="checkbox" id="keep-private" ${checked ? 'checked' : ''}><span>🔒 Keep private for me</span></label>
+                    <p class="form-note">Hidden from the people you share a home with.</p>
+                </div>`;
+    },
+
+    _privacyValue() {
+        return !!document.getElementById('keep-private')?.checked;
+    },
+
     // Reusable <select> of homes, used by both room modals.
     _homeSelect(selectedId) {
         const homes = Store.getHomes();
@@ -281,7 +389,8 @@ const Modal = {
                 </div>
                 ${parentRoom
                     ? `<div class="form-section"><label>Parent Room</label><div class="form-info">🏠 ${this._esc(parentRoom.name)}</div></div>`
-                    : `<div class="form-section"><label>Home</label>${this._homeSelect(null)}</div>`}
+                    : `<div class="form-section"><label>Home</label>${this._homeSelect(this._defaultHomeId())}</div>`}
+                ${this._privacyToggle(parentRoom ? !!parentRoom.isPrivate : false)}
                 <div class="form-section">
                     <label>Photo</label>
                     <input type="file" id="room-photo" accept="image/*" class="file-input">
@@ -310,6 +419,7 @@ const Modal = {
                 parentRoomId: parentRoom?.id || null,
                 // A sub-room inherits its parent's home rather than asking again.
                 homeId: parentRoom ? (parentRoom.homeId || null) : this._selectedHomeId(),
+                isPrivate: this._privacyValue(),
                 photo
             });
             this.close();
@@ -345,6 +455,7 @@ const Modal = {
                        </div>`
                     : `<div class="form-section"><label>Home</label>${this._homeSelect(room.homeId || null)}</div>
                        ${this._convertSection(roomId)}`}
+                ${this._privacyToggle(!!room.isPrivate)}
                 <div class="form-section">
                     <label>Photo</label>
                     <input type="file" id="room-photo" accept="image/*" class="file-input">
@@ -367,6 +478,7 @@ const Modal = {
             const updates = { name: document.getElementById('room-name').value.trim(), photo };
             // Only top-level rooms show the home picker; sub-rooms follow their parent.
             if (document.getElementById('room-home')) updates.homeId = this._selectedHomeId();
+            if (document.getElementById('keep-private')) updates.isPrivate = this._privacyValue();
             Store.updateRoom(roomId, updates);
             this.close();
         });
@@ -423,6 +535,7 @@ const Modal = {
                         </select>
                     </div>
                 </div>
+                ${this._privacyToggle()}
                 <div class="form-section">
                     <label>Photo</label>
                     <input type="file" id="item-photo" accept="image/*" class="file-input">
@@ -456,7 +569,7 @@ const Modal = {
         saveBtn.addEventListener('click', () => {
             const roomId = subSelect.value || roomSelect.value || null;
             const photo = this._getPhotoData('item-photo-preview');
-            Store.addItem({ name: nameInput.value.trim(), desc: document.getElementById('item-desc').value.trim(), itemType: document.getElementById('item-type').value, roomId, photo });
+            Store.addItem({ name: nameInput.value.trim(), desc: document.getElementById('item-desc').value.trim(), itemType: document.getElementById('item-type').value, roomId, photo, isPrivate: this._privacyValue() });
             this.close();
         });
     },
@@ -506,6 +619,7 @@ const Modal = {
                         </select>
                     </div>
                 </div>
+                ${this._privacyToggle(!!item.isPrivate)}
                 <div class="form-section">
                     <label>Photo</label>
                     <input type="file" id="item-photo" accept="image/*" class="file-input">
@@ -532,7 +646,7 @@ const Modal = {
         document.getElementById('modal-save-btn').addEventListener('click', () => {
             const roomId = subSelect.value || roomSelect.value || null;
             const photo = this._getPhotoData('item-photo-preview');
-            Store.updateItem(itemId, { name: document.getElementById('item-name').value.trim(), desc: document.getElementById('item-desc').value.trim(), itemType: document.getElementById('item-type').value, roomId, photo });
+            Store.updateItem(itemId, { name: document.getElementById('item-name').value.trim(), desc: document.getElementById('item-desc').value.trim(), itemType: document.getElementById('item-type').value, roomId, photo, isPrivate: this._privacyValue() });
             this.close();
         });
 
@@ -582,6 +696,7 @@ const Modal = {
                         <p class="form-note">Add details and photos after saving.</p>
                     </div>
                 </div>
+                ${this._privacyToggle()}
                 <div class="form-section"><label>Photo</label>
                     <input type="file" id="proj-photo" accept="image/*" class="file-input">
                     <label for="proj-photo" class="file-label">📷 Choose Photo</label>
@@ -615,7 +730,8 @@ const Modal = {
                 desc: document.getElementById('proj-desc').value.trim(),
                 budget: parseFloat(document.getElementById('proj-budget').value) || 0,
                 goalDate: hasGoal ? document.getElementById('proj-goal-date').value : null,
-                roomIds, itemIds, tasks, isDIY, photo
+                roomIds, itemIds, tasks, isDIY, photo,
+                isPrivate: this._privacyValue()
             });
 
             if (isDIY) {
@@ -716,6 +832,7 @@ const Modal = {
                         ? `<button class="btn-secondary" onclick="Store.updateProject('${projectId}',{isCompleted:false,completedAt:null});Modal.editProject('${projectId}')">↩ Reopen Project</button>`
                         : `<button class="btn-completed" onclick="Store.updateProject('${projectId}',{isCompleted:true,completedAt:new Date().toISOString()});Modal.editProject('${projectId}')">✓ Mark as Completed</button>`}
                 </div>
+                ${this._notesSection(projectId)}
                 ${this._shareSection('project', projectId, project)}
                 ${Store.isMine(project) ? `<div class="form-section">
                     <button class="btn-danger" id="delete-proj-btn">Delete Project</button>
@@ -760,6 +877,7 @@ const Modal = {
             }
         });
 
+        this._bindNotes(projectId);
         this._bindShareSection('project', projectId, () => { this.close(); setTimeout(() => this.editProject(projectId), 280); });
     },
 

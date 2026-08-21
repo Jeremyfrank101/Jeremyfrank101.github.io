@@ -768,3 +768,73 @@
     color: var(--text-secondary);
     margin-top: 2px;
 }
+
+/* ============ PROJECT NOTES ============ */
+
+.note-compose {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.note-compose textarea {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-family: inherit;
+    font-size: 15px;
+    line-height: 1.45;
+    background: white;
+    outline: none;
+    resize: vertical;
+    min-height: 62px;
+}
+
+.note-compose textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.12);
+}
+
+.note-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.note {
+    padding: 11px 13px;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--card-bg);
+}
+
+.note-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 5px;
+}
+
+.note-author {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--accent);
+}
+
+.note-time {
+    flex: 1;
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
+.note-del { flex-shrink: 0; }
+
+.note-body {
+    font-size: 14.5px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+}

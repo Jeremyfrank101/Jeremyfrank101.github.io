@@ -104,6 +104,7 @@ const Views = {
                 <div class="section-header" onclick="Modal.editRoom('${room.id}')">
                     ${room.photo ? `<img src="${room.photo}" class="section-photo">` : ''}
                     <span>${this._esc(room.name)}</span>
+                    ${room.isPrivate ? '<span class="share-badge incoming">🔒 private</span>' : ''}
                     <span class="section-edit">✏️</span>
                 </div>
                 <div class="section-body">
@@ -367,7 +368,7 @@ const Views = {
                 ${item.photo ? `<img src="${item.photo}">` : `<span>${ITEM_ICONS[item.itemType]}</span>`}
             </div>
             <div class="row-info">
-                <div class="row-title">${this._esc(item.name)}</div>
+                <div class="row-title">${this._esc(item.name)}${item.isPrivate ? ' <span class="share-badge incoming">🔒</span>' : ''}</div>
                 <div class="row-subtitle">
                     <span>${item.itemType}</span>
                     ${breadcrumb ? `<span class="dot">·</span><span>${this._esc(breadcrumb)}</span>` : ''}

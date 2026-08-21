@@ -276,3 +276,68 @@ create policy cozyhome_photos_access on storage.objects
         bucket_id = 'cozyhome-photos'
         and (storage.foldername(name))[1] = auth.uid()::text
     );
+
+-- ------------------------------------------------ "keep private for me" ----
+-- Applied 2026-08: rooms and items in a shared home are household-visible by
+-- default; this flag opts a single record out. These definitions supersede the
+-- rooms/items policies and can_access_room above.
+
+alter table public.rooms add column if not exists is_private boolean not null default false;
+alter table public.items add column if not exists is_private boolean not null default false;
+
+create or replace function public.can_access_room(r uuid)
+returns boolean language sql stable security definer set search_path = public, pg_temp as $$
+    select r is not null and exists (
+        select 1 from public.rooms rm
+        where rm.id = r
+          and (rm.user_id = auth.uid()
+               or (not rm.is_private and public.can_access_home(rm.home_id)))
+    );
+$$;
+
+drop policy if exists rooms_own_rows on public.rooms;
+create policy rooms_own_rows on public.rooms for all to authenticated
+    using (user_id = auth.uid() or (not is_private and public.can_access_home(home_id)))
+    with check (user_id = auth.uid() or (not is_private and public.can_access_home(home_id)));
+
+drop policy if exists items_own_rows on public.items;
+create policy items_own_rows on public.items for all to authenticated
+    using (user_id = auth.uid() or (not is_private and public.can_access_room(room_id)))
+    with check (user_id = auth.uid() or (not is_private and public.can_access_room(room_id)));
+
+-- --------------------------------------------------------- project notes ----
+-- A shared log of what has been done. Everyone with access to the project sees
+-- the whole history; each note records its author and time.
+
+create table if not exists public.project_notes (
+    id         uuid primary key default gen_random_uuid(),
+    project_id uuid not null references public.projects(id) on delete cascade,
+    user_id    uuid not null default auth.uid() references auth.users(id) on delete cascade,
+    body       text not null,
+    created_at timestamptz not null default now()
+);
+
+create index if not exists project_notes_project_idx on public.project_notes (project_id, created_at desc);
+create index if not exists project_notes_user_idx    on public.project_notes (user_id);
+
+alter table public.project_notes enable row level security;
+
+drop policy if exists project_notes_read   on public.project_notes;
+drop policy if exists project_notes_insert on public.project_notes;
+drop policy if exists project_notes_modify on public.project_notes;
+drop policy if exists project_notes_delete on public.project_notes;
+
+-- Read the whole log if you can see the project; write only under your own
+-- name; edit and delete stay with the author, so nobody can rewrite another
+-- person's record of what happened.
+create policy project_notes_read on public.project_notes
+    for select to authenticated using (public.can_access_project(project_id));
+create policy project_notes_insert on public.project_notes
+    for insert to authenticated
+    with check (user_id = auth.uid() and public.can_access_project(project_id));
+create policy project_notes_modify on public.project_notes
+    for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy project_notes_delete on public.project_notes
+    for delete to authenticated using (user_id = auth.uid());
+
+revoke all on public.project_notes from anon;

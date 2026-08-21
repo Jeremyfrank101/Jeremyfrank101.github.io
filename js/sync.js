@@ -10,6 +10,7 @@
 
 const Sync = {
     QUEUE_KEY: 'cozyhome_pending',
+    THEME_KEY: 'cozyhome_theme',
     LEGACY_KEY: 'cozyhome_data',
 
     // camelCase in the app, snake_case in Postgres.
@@ -31,7 +32,19 @@ const Sync = {
 
     reset() {
         this.cache = { homes: [], rooms: [], items: [], projects: [], diyItems: [],
-                       shares: [], people: {}, theme: 'California Cabana' };
+                       shares: [], people: {}, notes: {},
+                       theme: this.localTheme() || 'California Cabana' };
+    },
+
+    // The theme is an account preference, but it is also mirrored to this
+    // device so it survives sign-out and is applied before the first fetch
+    // returns — otherwise every logged-out screen flashes the default.
+    localTheme() {
+        try { return localStorage.getItem(this.THEME_KEY); } catch { return null; }
+    },
+
+    rememberTheme(name) {
+        try { localStorage.setItem(this.THEME_KEY, name); } catch (e) { /* private mode */ }
     },
 
     onStatus(fn) { this._listeners.push(fn); },
@@ -61,17 +74,18 @@ const Sync = {
         this._setStatus('syncing');
 
         try {
-            const [homes, rooms, items, projects, diyItems, prefs, shares] = await Promise.all([
+            const [homes, rooms, items, projects, diyItems, prefs, shares, notes] = await Promise.all([
                 this.client.from('homes').select('*'),
                 this.client.from('rooms').select('*'),
                 this.client.from('items').select('*'),
                 this.client.from('projects').select('*'),
                 this.client.from('diy_items').select('*'),
                 this.client.from('preferences').select('*').maybeSingle(),
-                this.client.from('shares').select('*')
+                this.client.from('shares').select('*'),
+                this.client.from('project_notes').select('*').order('created_at', { ascending: false })
             ]);
 
-            const firstError = [homes, rooms, items, projects, diyItems, prefs, shares].find(r => r.error);
+            const firstError = [homes, rooms, items, projects, diyItems, prefs, shares, notes].find(r => r.error);
             if (firstError) throw firstError.error;
 
             this.cache.homes    = (homes.data    || []).map(this.fromHome);
@@ -80,7 +94,13 @@ const Sync = {
             this.cache.projects = (projects.data || []).map(this.fromProject);
             this.cache.diyItems = (diyItems.data || []).map(this.fromDIY);
             this.cache.shares   = (shares.data   || []).map(this.fromShare);
-            this.cache.theme    = prefs.data?.theme || 'California Cabana';
+            this.cache.notes = {};
+            (notes.data || []).forEach(n => {
+                (this.cache.notes[n.project_id] ||= []).push(this.fromNote(n));
+            });
+            // The account's saved theme wins over whatever this device had.
+            this.cache.theme    = prefs.data?.theme || this.localTheme() || 'California Cabana';
+            this.rememberTheme(this.cache.theme);
 
             // How much this account already had on the server, captured before
             // any local writes can land, so the import decision is made on the
@@ -248,6 +268,24 @@ const Sync = {
             return;
         }
 
+        // Auto-shares ride the queue so they apply AFTER the row they share
+        // lands in Postgres — shares_owner_create checks owns_resource(), which
+        // fails if the project insert has not flushed yet.
+        if (op.type === 'autoshare') {
+            const { data, error } = await this.client.from('shares').insert({
+                resource_type: op.resourceType,
+                resource_id: op.id,
+                owner_id: Auth.getUser().id,
+                shared_with_id: op.userId
+            }).select().single();
+            if (error) {
+                if (error.code === '23505') return;   // already shared
+                throw error;
+            }
+            this.cache.shares.push(this.fromShare(data));
+            return;
+        }
+
         const table = this.TABLES[op.kind];
         if (!table) throw new Error('unknown table for kind ' + op.kind);
         const q = this.client.from(table);
@@ -354,6 +392,36 @@ const Sync = {
     // Postgres is snake_case; the app has always used camelCase. Convert at
     // the boundary rather than renaming fields across every view.
 
+    fromNote(n) {
+        return { id: n.id, projectId: n.project_id, userId: n.user_id,
+                 body: n.body, createdAt: n.created_at };
+    },
+
+    // Notes are written directly rather than queued: the author needs to know
+    // it actually landed, and a silently queued note looks posted when it is not.
+    async addNote(projectId, body) {
+        const { data, error } = await this.client.from('project_notes').insert({
+            project_id: projectId, user_id: Auth.getUser().id, body
+        }).select().single();
+        if (error) throw new Error(error.message);
+        const note = this.fromNote(data);
+        (this.cache.notes[projectId] ||= []).unshift(note);   // newest first
+        return note;
+    },
+
+    async deleteNote(noteId, projectId) {
+        // .select() so we can tell a real delete from one RLS silently dropped:
+        // deleting someone else's note matches zero rows and returns no error,
+        // and removing it from the cache anyway would hide a note that still
+        // exists on the server until the next reload.
+        const { data, error } = await this.client
+            .from('project_notes').delete().eq('id', noteId).select();
+        if (error) throw new Error(error.message);
+        if (!data || !data.length) throw new Error('That note belongs to someone else.');
+        const list = this.cache.notes[projectId] || [];
+        this.cache.notes[projectId] = list.filter(n => n.id !== noteId);
+    },
+
     fromShare(s) {
         return { id: s.id, resourceType: s.resource_type, resourceId: s.resource_id,
                  ownerId: s.owner_id, sharedWithId: s.shared_with_id, createdAt: s.created_at };
@@ -394,6 +462,23 @@ const Sync = {
         return person;
     },
 
+    // Share directly with a known account (used by auto-share, where the
+    // partner's id is already in the shares table). Duplicate shares are fine.
+    async shareWithUser(resourceType, resourceId, userId) {
+        const { data, error } = await this.client.from('shares').insert({
+            resource_type: resourceType,
+            resource_id: resourceId,
+            owner_id: Auth.getUser().id,
+            shared_with_id: userId
+        }).select().single();
+        if (error) {
+            if (error.code === '23505') return null;   // already shared
+            throw new Error(error.message);
+        }
+        this.cache.shares.push(this.fromShare(data));
+        return data;
+    },
+
     async unshare(shareId) {
         const { error } = await this.client.from('shares').delete().eq('id', shareId);
         if (error) throw new Error(error.message);
@@ -404,6 +489,7 @@ const Sync = {
     async loadPeople() {
         const ids = new Set();
         this.cache.shares.forEach(s => { ids.add(s.ownerId); ids.add(s.sharedWithId); });
+        Object.values(this.cache.notes || {}).forEach(list => list.forEach(n => ids.add(n.userId)));
         ids.delete(Auth.getUser()?.id);
         if (!ids.size) return;
         const { data, error } = await this.client
@@ -425,23 +511,25 @@ const Sync = {
 
     toRoom(r) {
         return { id: r.id, name: r.name, parent_room_id: r.parentRoomId || null,
-                 home_id: r.homeId || null,
+                 home_id: r.homeId || null, is_private: !!r.isPrivate,
                  photo: r.photoPath || null, created_at: r.createdAt };
     },
     fromRoom(r) {
         return { id: r.id, name: r.name, parentRoomId: r.parent_room_id,
-                 homeId: r.home_id, ownerId: r.user_id,
+                 homeId: r.home_id, ownerId: r.user_id, isPrivate: r.is_private,
                  photoPath: r.photo, photo: null, createdAt: r.created_at };
     },
 
     toItem(i) {
         return { id: i.id, name: i.name, description: i.desc || '',
                  item_type: i.itemType || 'Other', room_id: i.roomId || null,
+                 is_private: !!i.isPrivate,
                  photo: i.photoPath || null, created_at: i.createdAt };
     },
     fromItem(i) {
         return { id: i.id, name: i.name, desc: i.description || '',
                  itemType: i.item_type, roomId: i.room_id, ownerId: i.user_id,
+                 isPrivate: i.is_private,
                  photoPath: i.photo, photo: null, createdAt: i.created_at };
     },
 

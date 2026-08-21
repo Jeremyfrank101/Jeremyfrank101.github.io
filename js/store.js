@@ -52,8 +52,11 @@ const Store = {
     },
 
     setTheme(name) {
+        // Mirror to the device every time, even on a no-op, so a fresh install
+        // that happens to match the default still records the choice.
+        Sync.rememberTheme(name);
         // ThemeEngine.apply() calls this on every application, including when
-        // restoring the saved theme after login, so skip no-op writes.
+        // restoring the saved theme after login, so skip no-op server writes.
         if (this._data().theme === name) return;
         this._data().theme = name;
         if (Auth.getUser()) Sync.enqueue({ type: 'theme', theme: name });
@@ -93,6 +96,29 @@ const Store = {
         const p = this._data().people[userId];
         if (!p) return 'someone';
         return p.username || p.email;
+    },
+
+    // Everyone on the other end of a HOME share, in either direction. These
+    // are the people new objects are automatically visible to.
+    sharingPartners() {
+        const me = this.myId();
+        const out = new Set();
+        for (const sh of this._data().shares) {
+            if (sh.resourceType !== 'home') continue;
+            out.add(sh.ownerId === me ? sh.sharedWithId : sh.ownerId);
+        }
+        out.delete(me);
+        return [...out];
+    },
+
+    // New projects are visible to the household by default: a share row is
+    // created for each partner unless the project was created "keep private".
+    _autoShareProject(projectId) {
+        for (const uid of this.sharingPartners()) {
+            // Through the queue, not directly: it must run after the project
+            // row itself has flushed, and it survives offline the same way.
+            Sync.enqueue({ type: 'autoshare', resourceType: 'project', id: projectId, userId: uid });
+        }
     },
 
     shareResource(resourceType, resourceId, email) {
@@ -174,6 +200,7 @@ const Store = {
             name: room.name,
             parentRoomId: room.parentRoomId || null,
             homeId: room.homeId || null,
+            isPrivate: !!room.isPrivate,
             photo: null,
             photoPath: null,
             createdAt: new Date().toISOString()
@@ -274,6 +301,7 @@ const Store = {
             desc: item.desc || '',
             itemType: item.itemType || 'Other',
             roomId: item.roomId || null,
+            isPrivate: !!item.isPrivate,
             photo: null,
             photoPath: null,
             createdAt: new Date().toISOString()
@@ -323,6 +351,7 @@ const Store = {
             options: project.options || [],
             tasks: project.tasks || [],
             isDIY: project.isDIY || false,
+            isPrivate: !!project.isPrivate,
             photo: null,
             photoPath: null,
             createdAt: new Date().toISOString()
@@ -330,6 +359,7 @@ const Store = {
         this._data().projects.push(p);
         Sync.enqueue({ type: 'upsert', kind: 'projects', row: Sync.toProject(p) });
         this._applyPhoto('projects', p, project.photo || null);
+        if (!p.isPrivate) this._autoShareProject(p.id);
         return p;
     },
 
@@ -347,6 +377,24 @@ const Store = {
         data.diyItems = data.diyItems.filter(d => d.projectId !== id);
         data.projects = data.projects.filter(p => p.id !== id);
         Sync.enqueue({ type: 'delete', kind: 'projects', id });
+    },
+
+    // ---------- Project notes ----------
+    //
+    // A shared log of what has actually been done. Everyone with access to the
+    // project sees every note; each records its author and time.
+
+    getNotes(projectId) {
+        const list = (this._data().notes || {})[projectId] || [];
+        return list.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    },
+
+    addNote(projectId, body) {
+        return Sync.addNote(projectId, body);
+    },
+
+    deleteNote(noteId, projectId) {
+        return Sync.deleteNote(noteId, projectId);
     },
 
     // ---------- DIY Items ----------

@@ -1014,3 +1014,21 @@ body {
     color: var(--completed);
     font-weight: 700;
 }
+
+/* "Keep private for me" toggle */
+.privacy-toggle {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.privacy-toggle input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--accent);
+}
