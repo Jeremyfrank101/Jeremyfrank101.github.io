@@ -241,3 +241,74 @@ values
 ('yogurt-granola','Greek Yogurt with Granola','Breakfast','cup.and.saucer.fill', 1,0.5,0.5,0.5,1,0,0.5,1,0,0, 380,20,48,12,3,22,90, 10,2,0,200,1.5,350,32,25,0,0),
 ('zucchini','Zucchini (1 cup)','Dinner','veg', 0,0,0,0,0,1.5,0,0,0.4,0, 21,1.5,3.9,0.4,1.2,3.1,10, 20,20.2,0,19,0.5,325,30,12,0,0)
 on conflict (id) do nothing;
+
+
+-- ===========================================================================
+-- Canned bone-in salmon and seeds.
+--
+-- The bone-in salmon gets its own entries rather than reusing the fillet: the
+-- softened bones are edible and carry most of the calcium, which is the whole
+-- nutritional point of the canned form (~213mg per 100g against ~12mg for a
+-- fresh fillet). The boneless row is kept alongside so the difference is
+-- visible when logging.
+-- ===========================================================================
+
+insert into cozyhealth.generic_meals
+    (id, name, meal_type, icon,
+     animal_protein, plant_protein, saturated_fat, unsaturated_fat, whole_grains,
+     vegetables, fruits, simple_carbs, fiber, alcohol,
+     calories, protein_grams, carbs_grams, fat_grams, fiber_grams, sugar_grams, sodium_mg,
+     vitamin_a_mcg, vitamin_c_mg, vitamin_d_mcg, calcium_mg, iron_mg, potassium_mg,
+     folate_mcg, choline_mg, omega3_dha_mg, omega3_epa_mg, serving_grams)
+values
+('canned-salmon-can','Canned Salmon, bone-in (1 can, drained)','Lunch','fish',
+ 2,0,0.75,1.5,0,0,0,0,0,0, 230,33,0,10,0,0,650, 60,0,21,351,1.2,462,25,133,1120,750, 165),
+('canned-salmon-3oz','Canned Salmon, bone-in (3 oz)','Lunch','fish',
+ 1.5,0,0.5,1,0,0,0,0,0,0, 118,17,0,5.1,0,0,335, 31,0,10.8,181,0.6,238,13,69,577,386, 85),
+('canned-salmon-skinless','Canned Salmon, skinless boneless (3 oz)','Lunch','fish',
+ 1.5,0,0.25,0.75,0,0,0,0,0,0, 100,17,0,3,0,0,270, 15,0,9.5,15,0.4,230,10,66,500,340, 85),
+('sunflower-seeds','Sunflower Seeds (1 oz, kernels)','Snack','seeds',
+ 0,1,0.5,1.5,0,0,0,0,0.8,0, 165,5.5,6.8,14.1,3,0.8,1, 1,0.4,0,20,1.1,186,67,15,0,0, 28.3),
+('sunflower-seeds-tbsp','Sunflower Seeds (1 tbsp, kernels)','Snack','seeds',
+ 0,0.25,0.1,0.4,0,0,0,0,0.2,0, 47,1.6,1.9,4,0.8,0.2,0, 0,0.1,0,6,0.3,53,19,4,0,0, 8),
+('sunflower-butter','Sunflower Seed Butter (2 tbsp)','Snack','seeds',
+ 0,1,0.5,1.5,0,0,0,0,0.8,0, 200,6,7,18,3,1,120, 0,0.4,0,40,1.2,240,50,15,0,0, 32),
+('pumpkin-seeds','Pumpkin Seeds / Pepitas (1 oz)','Snack','seeds',
+ 0,1.5,0.5,1.5,0,0,0,0,0.4,0, 158,8.6,3,13.9,1.7,0.4,5, 1,0.5,0,15,2.3,223,16,17,0,0, 28.3),
+('sesame-seeds','Sesame Seeds (1 tbsp)','Snack','seeds',
+ 0,0.25,0.25,0.5,0,0,0,0,0.3,0, 52,1.6,2.1,4.5,1.1,0,1, 0,0,0,88,1.3,42,8,3,0,0, 9),
+('tahini','Tahini (2 tbsp)','Snack','seeds',
+ 0,1,0.5,1.5,0,0,0,0,0.7,0, 178,5.1,6.4,16,2.8,0.1,35, 0,0,0,128,2.7,138,29,15,0,0, 30),
+('hemp-hearts','Hemp Hearts (3 tbsp)','Snack','seeds',
+ 0,1.5,0.25,1.5,0,0,0,0,0.3,0, 166,9.5,2.6,14.6,1.2,0.5,2, 0,0.2,0,21,2.4,360,33,10,0,0, 30),
+('poppy-seeds','Poppy Seeds (1 tbsp)','Snack','seeds',
+ 0,0.25,0.25,0.5,0,0,0,0,0.4,0, 46,1.6,2.5,3.7,1.7,0.3,2, 0,0.1,0,127,0.8,63,7,2,0,0, 8.8),
+('watermelon-seeds','Watermelon Seeds (1 oz, roasted)','Snack','seeds',
+ 0,1.5,0.5,1.5,0,0,0,0,0.2,0, 158,8,4.3,13.4,0.9,0,28, 0,0,0,15,2.1,184,17,8,0,0, 28.3),
+('pine-nuts','Pine Nuts (1 oz)','Snack','seeds',
+ 0,0.5,0.5,2,0,0,0,0,0.3,0, 191,3.9,3.7,19.4,1.1,1,1, 1,0.2,0,5,1.6,169,10,16,0,0, 28.3),
+('mixed-seeds','Mixed Seed Blend (1 oz)','Snack','seeds',
+ 0,1.25,0.4,1.5,0,0,0,0,1.2,0, 160,7,5,13.5,3.4,0.5,4, 1,0.3,0,60,2,240,40,12,0,0, 28.3),
+('everything-seed-topping','Everything Seed Topping (1 tbsp)','Snack','seeds',
+ 0,0.25,0.1,0.4,0,0,0,0,0.3,0, 45,1.5,2,3.8,1,0.2,90, 0,0,0,70,1,55,8,3,0,0, 9)
+on conflict (id) do nothing;
+
+
+-- ===========================================================================
+-- Serving weights, so a food can be logged in grams.
+--
+-- Ounce-named rows are exact conversions. Cup and piece weights are USDA;
+-- packaged products use their label weight. The composed dishes (a plate of
+-- biryani, a burrito bowl) are estimated from calorie density, since there is
+-- no single correct weight for a plated meal.
+--
+-- Trader Joe's Multivitamin is deliberately absent: grams of a tablet is not
+-- a portion anyone means, and the app hides the grams option when this is
+-- NULL rather than inviting a meaningless number.
+-- ===========================================================================
+
+update cozyhealth.generic_meals g set serving_grams = v.grams
+from (values
+('almond-milk',240),('almonds-oz',28.3),('aloo-gobi',304),('aloo-paratha',320),('apple',182),('apple-pb',127),('asparagus',180),('avocado-half',100),('avocado-toast',224),('banana',118),('beef-jerky',28.3),('beef-pho',336),('beef-tacos',368),('beer',356),('bell-pepper',119),('bibimbap',384),('black-bean-burger',336),('black-beans-cup',172),('blueberries-cup',148),('broccoli-cup',156),('brown-rice-cup',195),('brussels',156),('buddha-bowl',384),('built-bar',49),('burrito-bowl',416),('butter-chicken',464),('canned-salmon-3oz',85),('canned-salmon-can',165),('canned-salmon-skinless',85),('caprese',256),('carrots',128),('casein',33),('catalina-crunch',36),('cauliflower-rice',107),('chana-masala-rice',368),('cheeseburger-fries',576),('chia-seeds',28.3),('chicken-caesar',352),('chicken-salad',344),('chicken-shawarma',384),('chicken-stir-fry',384),('chicken-thigh',113.4),('chicken-tikka-masala',448),('chickpeas-cup',164),('chomps',31),('cinnamon-cereal',41),('clif-builders',68),('cod',113.4),('coffee-black',237),('collagen',11),('congee-veggies',176),('cottage-cheese',226),('cottage-single',150),('cucumber',119),('curd-rice',240),('dal-makhani',384),('dark-chocolate',28.3),('dates-almonds',127),('david-bar',45),('edamame',155),('edamame-pods',155),('egg-white-1',56),('egg-white-cup',243),('egg-whole-1',50),('eggplant-parm',352),('eggs-toast',272),('everything-seed-topping',9),('ezekiel-bread',34),('fairlife-core',414),('falafel-wrap',384),('flaxseed',14),('gomacro',65),('greek-yogurt',250),('greek-yogurt-nf',245),('green-beans',125),('green-tea',237),('halo-top',236),('hemp-hearts',30),('hummus',30),('hummus-carrots',100),('hummus-pita',336),('hummus-veg',95),('idli-sambar',248),('ind-almonds',28.3),('ind-apple',182),('ind-avocado-half',100),('ind-banana',118),('ind-bell-pepper',119),('ind-black-beans',86),('ind-blueberries',148),('ind-broccoli',156),('ind-brown-rice',98),('ind-butter',14.2),('ind-carrot',61),('ind-cheese-slice',28.3),('ind-chicken-breast',113.4),('ind-cucumber',119),('ind-dark-chocolate',28.3),('ind-egg',50),('ind-grapes',151),('ind-greek-yogurt',245),('ind-honey',21),('ind-lentils',99),('ind-mango',165),('ind-milk',244),('ind-oats',40),('ind-olive-oil',13.5),('ind-orange',131),('ind-peanut-butter',32),('ind-pineapple',165),('ind-quinoa',93),('ind-salmon-fillet',113.4),('ind-spinach',180),('ind-strawberries',152),('ind-sweet-potato',114),('ind-tofu',126),('ind-tomato',123),('ind-walnuts',28.3),('ind-watermelon',152),('ind-white-rice',79),('ind-whole-wheat-bread',32),('kale-cup',21),('kidney-beans',177),('kind-bar',40),('kung-pao',416),('lamb-kebab',448),('larabar',45),('lean-beef',113.4),('lemon-rice',280),('lentil-soup',224),('lentils-cup',198),('magic-spoon',35),('mapo-tofu',368),('masala-dosa',296),('milk-skim',245),('mixed-seeds',28.3),('muscle-milk',414),('mushroom-risotto',384),('mushrooms',70),('oatmeal-berries',248),('oats-dry',40),('oikos-triple',150),('olive-oil',13.5),('orange',131),('orgain-powder',46),('palak-paneer',368),('pancakes',336),('pasta-tomato',416),('pea-protein',33),('peanut-butter',32),('pepperoni-pizza',432),('perfect-bar',65),('pickles',60),('pine-nuts',28.3),('popcorn',24),('poppy-seeds',8.8),('pork-tenderloin',113.4),('premier-shake',325),('protein-coffee',350),('protein-powder',31),('protein-shake',330),('pumpkin-seeds',28.3),('pure-protein',50),('quest-birthday',60),('quest-ccd',60),('quest-chips',32),('quest-cookies',60),('quinoa-cup',185),('rajma-chawal',352),('rasam-rice',272),('ratio-yogurt',170),('rice-cake',9),('rx-bar',52),('salad-greens',56),('salmon-4oz',113.4),('salmon-rice',448),('salmon-rice-broccoli',416),('salsa',65),('sambar-rice',304),('samosa',155),('sardines',92),('seaweed-snack',5),('seitan-loaf',900),('seitan-serving',150),('sesame-seeds',9),('shakshuka',280),('shrimp',113.4),('skinny-pop',28),('skyr',227),('smoked-salmon-3oz',85),('spaghetti-marinara',336),('special-k-prot',31),('spinach-cooked-cup',180),('spinach-raw-cup',30),('spring-rolls',118),('stir-fry-tofu',352),('strawberries',152),('string-cheese',28),('sunflower-butter',32),('sunflower-seeds',28.3),('sunflower-seeds-tbsp',8),('sweet-potato',114),('tabbouleh',176),('tahini',30),('tempeh',113.4),('tilapia',113.4),('tofu-firm',113.4),('tofu-pad-thai',384),('tomato',123),('trail-mix',40),('tuna-can',142),('tuna-salad',256),('turkey-breast',113.4),('turkey-sandwich',288),('two-good',150),('veg-biryani',336),('veg-dumplings',288),('veg-ramen',352),('veg-stirfry',328),('veg-sushi',256),('veggie-wrap',272),('walnuts-oz',28.3),('watermelon-seeds',28.3),('whole-wheat-bread',32),('wine-red',147),('yogurt-granola',304),('zucchini',124)
+) as v(id, grams)
+where g.id = v.id;

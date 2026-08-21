@@ -26,6 +26,14 @@ const Apps = {
             color: '#3f9e78'
         },
         {
+            id: 'cookbook',
+            name: 'CozyCookBook',
+            tagline: 'Recipes worth keeping',
+            blurb: 'Your cookbooks, their recipes, and the ingredients and steps to cook them. Share a whole cookbook with someone and you both keep adding to it.',
+            icon: '\u{1F4D6}',
+            color: '#b8603f'
+        },
+        {
             id: 'iliad',
             name: 'Wrath',
             tagline: 'Duels of the Iliad',
@@ -55,6 +63,7 @@ const Apps = {
         picker:   'picker-screen',
         cozyhome: 'app-screen',
         health:   'health-screen',
+        cookbook: 'cookbook-screen',
         iliad:    'iliad-screen',
         mali:     'mali-screen',
         highfive: 'highfive-screen'
@@ -112,6 +121,9 @@ const Apps = {
         } else if (id === 'health') {
             const host = document.getElementById('health-host');
             if (host) CozyHealth.mount(host);
+        } else if (id === 'cookbook') {
+            const host = document.getElementById('cookbook-host');
+            if (host) CozyCookBook.mount(host);
         } else if (id === 'iliad') {
             const host = document.getElementById('iliad-host');
             if (host) Iliad.mount(host);
@@ -126,6 +138,7 @@ const Apps = {
 
     _teardown(id) {
         if (id === 'health') CozyHealth.unmount();
+        else if (id === 'cookbook') CozyCookBook.unmount();
         else if (id === 'iliad') Iliad.unmount();
         else if (id === 'mali') Game.unmount();
         else if (id === 'highfive') HighFive.unmount();

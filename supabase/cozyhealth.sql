@@ -129,3 +129,31 @@ begin
                        t || '_write', t);
     end loop;
 end $$;
+
+
+-- ---------------------------------------------------------------------------
+-- Portions: logging a food in grams or as a percentage of its serving.
+--
+-- generic_meals rows describe one named portion ("Salmon (4 oz cooked)") but
+-- never recorded what that portion weighs, so there was nothing to scale a
+-- gram amount against. serving_grams is that weight, and stays NULL where a
+-- weight is not meaningful (a multivitamin tablet) — the app hides the grams
+-- option for those.
+--
+-- meal_entries.quantity / quantity_unit record what the user actually chose,
+-- so an entry can be displayed and re-logged as that amount rather than
+-- always as one serving. Both are NULL on entries predating this.
+-- ---------------------------------------------------------------------------
+
+alter table cozyhealth.generic_meals add column if not exists serving_grams double precision;
+alter table cozyhealth.meal_entries  add column if not exists quantity double precision;
+alter table cozyhealth.meal_entries  add column if not exists quantity_unit text;
+
+alter table cozyhealth.meal_entries drop constraint if exists meal_entries_quantity_unit_check;
+alter table cozyhealth.meal_entries add constraint meal_entries_quantity_unit_check
+    check (quantity_unit is null or quantity_unit in ('serving','gram'));
+
+comment on column cozyhealth.generic_meals.serving_grams is
+    'Weight in grams of the portion named in `name`. NULL where a weight is not meaningful.';
+comment on column cozyhealth.meal_entries.quantity is
+    'Amount logged, in the unit given by quantity_unit. NULL on entries predating portion support.';

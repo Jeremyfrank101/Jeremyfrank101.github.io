@@ -43,6 +43,29 @@ const CozyHealth = {
     mounted: false,
     tab: 'today',
     viewing: null,      // null = your own log; otherwise a user id shared with you
+
+    // How much of a food a tap logs. Kept on the app rather than in the markup
+    // so it survives a re-render, and reset to one whole serving after each
+    // log so the common case stays a single tap.
+    amount: { value: 100, unit: 'percent' },
+    UNIT_DEFAULTS: { percent: 100, gram: 100, serving: 1 },
+
+    // Library column -> meal_entries column. The micros were in both tables
+    // all along but quickAdd only ever copied the macros, so every logged
+    // library food silently dropped its sodium, calcium, iron and vitamins.
+    LIB_TO_ENTRY: {
+        calories: 'calories', protein_grams: 'protein_grams', carbs_grams: 'carbs_grams',
+        fat_grams: 'fat_grams', fiber_grams: 'fiber_grams', sugar_grams: 'sugar_grams',
+        sodium_mg: 'sodium_mg', vitamin_a_mcg: 'vitamin_a_mcg', vitamin_c_mg: 'vitamin_c_mg',
+        vitamin_d_mcg: 'vitamin_d_mcg', calcium_mg: 'calcium_mg', iron_mg: 'iron_mg',
+        potassium_mg: 'potassium_mg', folate_mcg: 'folate_mcg', choline_mg: 'choline_mg',
+        omega3_dha_mg: 'omega3_dha_mg', omega3_epa_mg: 'omega3_epa_mg',
+        animal_protein: 'animal_protein_servings', plant_protein: 'plant_protein_servings',
+        saturated_fat: 'saturated_fat_servings', unsaturated_fat: 'unsaturated_fat_servings',
+        whole_grains: 'whole_grains_servings', vegetables: 'vegetables_servings',
+        fruits: 'fruits_servings', simple_carbs: 'simple_carbs_servings',
+        fiber: 'fiber_servings', alcohol: 'alcohol_servings'
+    },
     people: {},         // user id -> { email, username }
     shares: [],
     data: { meals: [], workouts: [], mind: [], meditations: [], measurements: [], library: [], profile: null },
@@ -501,13 +524,49 @@ const CozyHealth = {
             .slice(0, 14);
     },
 
-    // Re-log a past entry: copy its nutrition forward under today's date.
+    // Re-log a past entry under today's date, at whatever the amount bar says.
+    //
+    // If the entry came from the library, re-log the library row instead: that
+    // gives a per-serving basis with a known weight, so grams work. A meal the
+    // user typed by hand has no such basis, so the entry itself is normalised
+    // back to one serving and rescaled from there.
     async logAgain(mealId) {
         const src = this.data.meals.find(m => m.id === mealId);
         if (!src) return;
-        const row = { ...src, ...this._base(), date: new Date().toISOString() };
-        delete row.id; delete row.created_at;
-        await this._insert('meal_entries', row, 'meals', `${src.name} logged again`, 2);
+
+        const key = (src.name || '').trim().toLowerCase();
+        const lib = this.data.library.find(g => (g.name || '').trim().toLowerCase() === key);
+        if (lib) return this.quickAdd(lib.id);
+
+        const p = this._portion(null);      // no known weight for a custom meal
+        if (p.error) { this._toast(p.error); return; }
+        // undo the amount it was originally logged at, then apply the new one
+        const per = (src.quantity_unit === 'serving' && src.quantity > 0) ? src.quantity : 1;
+        const ident = {};
+        for (const k of Object.values(this.LIB_TO_ENTRY)) ident[k] = k;
+
+        const row = {
+            ...this._base(),
+            name: src.name, meal_type: src.meal_type, date: new Date().toISOString(),
+            quantity: p.quantity, quantity_unit: p.unit,
+            ...this._scaled(src, ident, p.factor / per)
+        };
+        await this._insert('meal_entries', row, 'meals', `${src.name} — ${p.label}`, 2);
+        this.resetAmount();
+    },
+
+    resetAmount() {
+        this.amount = { value: this.UNIT_DEFAULTS.percent, unit: 'percent' };
+    },
+
+    _amountHint() {
+        const { value, unit } = this.amount;
+        const v = Number(value);
+        if (!isFinite(v) || v <= 0) return 'Enter an amount, then tap a food.';
+        if (unit === 'gram')    return `Tap a food to log ${this.fmt(v)} g of it.`;
+        if (unit === 'serving') return `Tap a food to log ${this.fmt(v, 2)}× its serving.`;
+        return v === 100 ? 'Tap a food to log one serving.'
+                         : `Tap a food to log ${this.fmt(v)}% of a serving.`;
     },
 
     // ---------- Food ----------
@@ -519,8 +578,21 @@ const CozyHealth = {
         if (!this.isOwnLog()) return this._readOnlyFood();
         const sug = this.suggestions();
         const hour = new Date().toLocaleTimeString(undefined, { hour: 'numeric' });
+        const A = this.amount;
+        const unitBtn = (u, label, title) =>
+            `<button class="chx-unit ${A.unit === u ? 'active' : ''}" data-unit="${u}" title="${title}">${label}</button>`;
         return `
         <div class="chx-card">
+            <div class="chx-amount">
+                <input type="number" id="chx-amt" value="${A.value}" min="0" step="any" aria-label="Amount">
+                <div class="chx-units">
+                    ${unitBtn('percent', '%', 'Percent of one serving')}
+                    ${unitBtn('gram', 'g', 'Grams')}
+                    ${unitBtn('serving', '×', 'Whole servings')}
+                </div>
+                <span class="chx-dim chx-amt-hint">${this.esc(this._amountHint())}</span>
+            </div>
+
             <h3>Usually around ${this.esc(hour)}</h3>
             ${sug.mine.length ? `<div class="chx-chips">
                 ${sug.mine.map(m => `<button class="chx-chip chx-again" data-again="${m.id}">
@@ -600,11 +672,19 @@ const CozyHealth = {
         </div>`;
     },
 
+    // How much of it was logged, shown only when it is not one plain serving.
+    _amountOf(m) {
+        if (m.quantity == null) return '';
+        if (m.quantity_unit === 'gram') return ` · ${this.fmt(m.quantity)} g`;
+        if (Math.abs(m.quantity - 1) < 0.005) return '';
+        return ` · ${this.fmt(m.quantity * 100)}%`;
+    },
+
     _mealRow(m, deletable) {
         return `<div class="chx-item">
             <div class="chx-item-main">
                 <strong>${this.esc(m.name)}</strong>
-                <span class="chx-dim">${this.esc(m.meal_type)} · ${this.when(m.date)}</span>
+                <span class="chx-dim">${this.esc(m.meal_type)} · ${this.when(m.date)}${this._amountOf(m)}</span>
             </div>
             <span class="chx-item-num">${this.fmt(m.calories)} kcal</span>
             ${deletable ? `<button class="chx-del" data-del-meal="${m.id}" title="Delete">✕</button>` : ''}
@@ -817,6 +897,25 @@ const CozyHealth = {
         this.container.querySelectorAll('[data-again]').forEach(b =>
             b.addEventListener('click', () => this.logAgain(b.dataset.again)));
 
+        // Amount bar. Typing only updates the hint; switching unit swaps in a
+        // sensible default for that unit rather than reinterpreting "100" as
+        // 100 servings.
+        const amt = $('chx-amt'), hint = this.container.querySelector('.chx-amt-hint');
+        if (amt) {
+            amt.addEventListener('input', () => {
+                this.amount.value = amt.value;
+                if (hint) hint.textContent = this._amountHint();
+            });
+        }
+        this.container.querySelectorAll('[data-unit]').forEach(b =>
+            b.addEventListener('click', () => {
+                this.amount = { unit: b.dataset.unit, value: this.UNIT_DEFAULTS[b.dataset.unit] };
+                this.container.querySelectorAll('[data-unit]').forEach(x =>
+                    x.classList.toggle('active', x === b));
+                if (amt) amt.value = this.amount.value;
+                if (hint) hint.textContent = this._amountHint();
+            }));
+
         const search = $('chx-food-search');
         if (search) {
             const results = $('chx-food-results');
@@ -870,21 +969,53 @@ const CozyHealth = {
         return { owner_id: uid, device_id: 'web:' + uid, user_id: uid };
     },
 
+    // ---------- portions ----------
+    //
+    // Everything logged from the library or re-logged from history goes
+    // through here, so grams, percentages and whole servings all end up as one
+    // multiplier applied to a per-serving basis.
+
+    // How many servings the amount bar currently means for this food.
+    // `basisGrams` is what one serving of it weighs, or null if unknown.
+    _portion(basisGrams) {
+        const { value, unit } = this.amount;
+        const v = Number(value);
+        if (!isFinite(v) || v <= 0) return { error: 'Enter an amount above zero.' };
+        if (unit === 'gram') {
+            if (!basisGrams) return { error: 'No serving weight for this one — use % or servings.' };
+            return { factor: v / basisGrams, quantity: v, unit: 'gram', label: this.fmt(v) + ' g' };
+        }
+        const servings = unit === 'percent' ? v / 100 : v;
+        return {
+            factor: servings, quantity: servings, unit: 'serving',
+            label: unit === 'percent' ? this.fmt(v) + '% of a serving'
+                                      : this.fmt(servings, 2) + (servings === 1 ? ' serving' : ' servings')
+        };
+    },
+
+    // Multiply a nutrient row. `map` is source key -> destination key.
+    _scaled(src, map, factor) {
+        const out = {};
+        for (const [from, to] of Object.entries(map)) {
+            const n = Number(src[from]);
+            out[to] = isFinite(n) ? Math.round(n * factor * 100) / 100 : 0;
+        }
+        return out;
+    },
+
     async quickAdd(id) {
         const g = this.data.library.find(x => x.id === id);
         if (!g) return;
+        const p = this._portion(g.serving_grams);
+        if (p.error) { this._toast(p.error); return; }
         const row = {
             ...this._base(),
             name: g.name, meal_type: g.meal_type, date: new Date().toISOString(),
-            calories: g.calories, protein_grams: g.protein_grams, carbs_grams: g.carbs_grams,
-            fat_grams: g.fat_grams, fiber_grams: g.fiber_grams,
-            animal_protein_servings: g.animal_protein, plant_protein_servings: g.plant_protein,
-            saturated_fat_servings: g.saturated_fat, unsaturated_fat_servings: g.unsaturated_fat,
-            whole_grains_servings: g.whole_grains, vegetables_servings: g.vegetables,
-            fruits_servings: g.fruits, simple_carbs_servings: g.simple_carbs,
-            fiber_servings: g.fiber, alcohol_servings: g.alcohol
+            quantity: p.quantity, quantity_unit: p.unit,
+            ...this._scaled(g, this.LIB_TO_ENTRY, p.factor)
         };
-        await this._insert('meal_entries', row, 'meals', `${g.name} logged`, 2);
+        await this._insert('meal_entries', row, 'meals', `${g.name} — ${p.label}`, 2);
+        this.resetAmount();
     },
 
     async addMeal() {
