@@ -118,8 +118,8 @@ const Modal = {
 
         const delBtn = document.getElementById('delete-home-btn');
         if (delBtn) delBtn.addEventListener('click', () => {
-            if (confirm(`Delete "${home.name}"? Its rooms will be kept and moved to “No Home”.`)) {
-                Store.deleteHome(homeId);
+            {
+                Store.deleteWithUndo('home', homeId, `"${home.name}"`);
                 this.close();
             }
         });
@@ -494,8 +494,8 @@ const Modal = {
         });
 
         document.getElementById('delete-room-btn').addEventListener('click', () => {
-            if (confirm(`Delete "${room.name}"? This cannot be undone.`)) {
-                Store.deleteRoom(roomId);
+            {
+                Store.deleteWithUndo('room', roomId, `"${room.name}"`);
                 this.close();
             }
         });
@@ -651,7 +651,7 @@ const Modal = {
         });
 
         document.getElementById('delete-item-btn').addEventListener('click', () => {
-            if (confirm(`Delete "${item.name}"?`)) { Store.deleteItem(itemId); this.close(); }
+            { Store.deleteWithUndo('item', itemId, `"${item.name}"`); this.close(); }
         });
     },
 
@@ -871,8 +871,8 @@ const Modal = {
 
         const delProj = document.getElementById('delete-proj-btn');
         if (delProj) delProj.addEventListener('click', () => {
-            if (confirm(`Delete "${project.name}"? This cannot be undone.`)) {
-                Store.deleteProject(projectId);
+            {
+                Store.deleteWithUndo('project', projectId, `"${project.name}"`);
                 this.close();
             }
         });

@@ -21,7 +21,7 @@ const Views = {
         if (projects.length) {
             html += `<div class="section">
                 <div class="section-header"><span>Projects</span><span class="badge">${projects.length}</span></div>
-                <div class="section-body">${projects.map(p => this._projectRow(p)).join('')}</div>
+                <div class="section-body" data-drag="project">${projects.map(p => this._projectRow(p)).join('')}</div>
             </div>`;
         }
 
@@ -30,9 +30,9 @@ const Views = {
         if (homes.length) {
             html += `<div class="section">
                 <div class="section-header"><span>Homes</span><span class="badge">${homes.length}</span></div>
-                <div class="section-body">${homes.map(h => {
+                <div class="section-body" data-drag="home">${homes.map(h => {
                     const n = Store.getRoomsForHome(h.id).length;
-                    return `<div class="list-row" onclick="Modal.editHome('${h.id}')">
+                    return `<div class="list-row" data-key="${h.id}" data-kind="home" onclick="Modal.editHome('${h.id}')"><span class="ui-grip" data-drag-handle aria-hidden="true"></span>
                         <div class="row-thumb">${h.photo ? `<img src="${h.photo}" style="width:100%;height:100%;object-fit:cover">` : '<span>🏡</span>'}</div>
                         <div class="row-info">
                             <div class="row-title">${this._esc(h.name)} ${this._shareBadge('home', h.id, h)}</div>
@@ -47,10 +47,10 @@ const Views = {
         if (rooms.length) {
             html += `<div class="section">
                 <div class="section-header"><span>Rooms</span><span class="badge">${rooms.length}</span></div>
-                <div class="section-body">${rooms.map(r => {
+                <div class="section-body" data-drag="room">${rooms.map(r => {
                     const itemCount = Store.getItemsForRoom(r.id).length;
                     const subCount = Store.getSubRooms(r.id).length;
-                    return `<div class="list-row" onclick="Modal.editRoom('${r.id}')">
+                    return `<div class="list-row" data-key="${r.id}" data-kind="room" onclick="Modal.editRoom('${r.id}')"><span class="ui-grip" data-drag-handle aria-hidden="true"></span>
                         <div class="row-thumb">${r.photo ? `<img src="${r.photo}" style="width:100%;height:100%;object-fit:cover">` : '<span>🏠</span>'}</div>
                         <div class="row-info">
                             <div class="row-title">${this._esc(r.name)}</div>
@@ -107,7 +107,7 @@ const Views = {
                     ${room.isPrivate ? '<span class="share-badge incoming">🔒 private</span>' : ''}
                     <span class="section-edit">✏️</span>
                 </div>
-                <div class="section-body">
+                <div class="section-body" data-drag="item" data-room="${room.id}">
                     ${roomItems.map(i => this._itemRow(i)).join('')}
                     ${subRooms.map(sub => {
                         const subItems = Store.getItemsForRoom(sub.id);
@@ -150,7 +150,7 @@ const Views = {
         });
 
         if (unassigned.length) {
-            html += `<div class="section"><div class="section-header"><span>No Room</span></div><div class="section-body">${unassigned.map(i => this._itemRow(i)).join('')}</div></div>`;
+            html += `<div class="section"><div class="section-header"><span>No Room</span></div><div class="section-body" data-drag="item" data-room="">${unassigned.map(i => this._itemRow(i)).join('')}</div></div>`;
         }
         return html;
     },
@@ -162,7 +162,7 @@ const Views = {
             if (!items.length) return;
             html += `<div class="section">
                 <div class="section-header"><span>${ITEM_ICONS[type]} ${type}</span></div>
-                <div class="section-body">${items.map(i => this._itemRow(i)).join('')}</div>
+                <div class="section-body" data-drag="item">${items.map(i => this._itemRow(i)).join('')}</div>
             </div>`;
         });
         return html;
@@ -179,10 +179,10 @@ const Views = {
         }
 
         if (open.length) {
-            html += `<div class="section"><div class="section-header"><span>Open</span></div><div class="section-body">${open.map(p => this._projectRow(p)).join('')}</div></div>`;
+            html += `<div class="section"><div class="section-header"><span>Open</span></div><div class="section-body" data-drag="project">${open.map(p => this._projectRow(p)).join('')}</div></div>`;
         }
         if (completed.length) {
-            html += `<div class="section"><div class="section-header"><span>Completed</span></div><div class="section-body">${completed.map(p => this._projectRow(p)).join('')}</div></div>`;
+            html += `<div class="section"><div class="section-header"><span>Completed</span></div><div class="section-body" data-drag="project">${completed.map(p => this._projectRow(p)).join('')}</div></div>`;
         }
         return html;
     },
@@ -362,7 +362,7 @@ const Views = {
 
     _itemRow(item) {
         const breadcrumb = Store.getRoomBreadcrumb(item.roomId);
-        return `<div class="list-row" onclick="Modal.editItem('${item.id}')">
+        return `<div class="list-row" data-key="${item.id}" data-kind="item" onclick="Modal.editItem('${item.id}')"><span class="ui-grip" data-drag-handle aria-hidden="true"></span>
             <div class="row-thumb ${item.photo ? 'has-photo' : ''}">
                 ${item.photo ? `<img src="${item.photo}">` : `<span>${ITEM_ICONS[item.itemType]}</span>`}
             </div>
@@ -383,7 +383,7 @@ const Views = {
         const tasksDone = tasks.filter(t => t.done).length;
         const isPast = project.goalDate && new Date(project.goalDate) < new Date() && !project.isCompleted;
 
-        return `<div class="list-row" onclick="Modal.editProject('${project.id}')">
+        return `<div class="list-row" data-key="${project.id}" data-kind="project" onclick="Modal.editProject('${project.id}')"><span class="ui-grip" data-drag-handle aria-hidden="true"></span>
             <div class="row-thumb project-thumb ${project.photo ? 'has-photo' : ''}">
                 ${project.photo
                     ? `<img src="${project.photo}">`

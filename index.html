@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="css/modals.css">
     <link rel="stylesheet" href="css/game.css">
     <link rel="stylesheet" href="css/responsive.css">
+    <link rel="stylesheet" href="css/ui.css">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏠</text></svg>">
 </head>
 <body>
@@ -133,7 +134,8 @@
             </div>
         </header>
 
-        <!-- Filter Tabs -->
+        <!-- Filter tabs and search stick together as one toolbar -->
+        <div class="toolbar-sticky">
         <div class="filter-bar">
             <button class="filter-tab active" data-filter="all">All</button>
             <button class="filter-tab" data-filter="room">Room</button>
@@ -142,8 +144,16 @@
             <button class="filter-tab" data-filter="info">Info</button>
         </div>
 
+        <!-- Search across everything in this account -->
+        <div class="search-bar">
+            <input type="search" id="home-search" placeholder="Search rooms, items and projects…"
+                   autocomplete="off" aria-label="Search rooms, items and projects">
+        </div>
+        </div>
+
         <!-- Main Content -->
         <main id="main-content">
+            <div id="search-none" class="empty-note hidden">Nothing matches that.</div>
             <div id="empty-state" class="empty-state hidden">
                 <div class="empty-icon">🏠</div>
                 <h3>No Items Yet</h3>
@@ -196,7 +206,9 @@
     <script src="js/cookbook.js"></script>
     <script src="js/iliad.js"></script>
     <script src="js/highfive.js"></script>
+    <script src="js/ui.js"></script>
     <script src="js/apps.js"></script>
+    <script src="js/palette.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>

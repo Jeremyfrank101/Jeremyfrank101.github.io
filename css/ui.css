@@ -1,0 +1,243 @@
+/* ui.css — shared interaction primitives: drag, undo, skeletons, swipe. */
+
+/* ---------- keyed list enter / exit ---------- */
+@keyframes ui-in  { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@keyframes ui-out { to { opacity: 0; transform: translateX(-14px); } }
+
+.ui-enter { animation: ui-in 0.22s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
+.ui-exit  { animation: ui-out 0.18s ease-in both; pointer-events: none; }
+
+/* ---------- drag ---------- */
+.ui-drag-active { cursor: grabbing; user-select: none; -webkit-user-select: none; }
+.ui-drag-active * { cursor: grabbing !important; }
+
+/* the row left behind reads as the gap the item will drop into */
+.ui-dragging {
+    opacity: 0.32;
+    filter: grayscale(0.5);
+}
+
+/* the clone that follows the pointer */
+.ui-ghost {
+    z-index: 2000;
+    opacity: 0.96;
+    transform-origin: center;
+    box-shadow: 0 14px 38px rgba(0, 0, 0, 0.28);
+    border-radius: 14px;
+    overflow: hidden;
+    rotate: 1.4deg;
+    scale: 1.02;
+}
+
+/* a row that will swallow the drop, e.g. a room accepting an item */
+.ui-drop-on {
+    outline: 2px dashed var(--accent);
+    outline-offset: 2px;
+    background: rgba(var(--accent-rgb, 242 115 77), 0.09);
+    border-radius: 12px;
+}
+
+/* the grip. Present but quiet until you go looking for it. */
+.ui-grip {
+    flex: 0 0 auto;
+    width: 22px;
+    align-self: stretch;
+    cursor: grab;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    background-image: radial-gradient(currentColor 1.2px, transparent 1.2px);
+    background-size: 5px 5px;
+    background-position: center;
+    background-repeat: repeat-y;
+    color: var(--text-dim);
+    touch-action: none;
+}
+.ui-grip:hover { opacity: 0.85; }
+[data-key]:hover > .ui-grip,
+[data-key]:focus-within > .ui-grip { opacity: 0.45; }
+@media (hover: none) { .ui-grip { opacity: 0.3; } }
+
+/* ---------- undo ---------- */
+.ui-undo {
+    position: fixed;
+    left: 50%;
+    bottom: 68px;
+    transform: translateX(-50%);
+    z-index: 120;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 11px 12px 11px 18px;
+    border-radius: 50px;
+    background: rgba(22, 15, 28, 0.95);
+    color: #fff;
+    font-size: 0.9rem;
+    box-shadow: 0 6px 26px rgba(0, 0, 0, 0.34);
+    animation: ui-in 0.2s ease both;
+    max-width: calc(100vw - 32px);
+}
+.ui-undo.hidden { display: none; }
+.ui-undo-msg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-undo-btn {
+    flex: 0 0 auto;
+    border: none;
+    background: rgba(255, 255, 255, 0.16);
+    color: #fff;
+    font: inherit;
+    font-weight: 700;
+    padding: 6px 15px;
+    border-radius: 50px;
+    cursor: pointer;
+}
+.ui-undo-btn:hover { background: rgba(255, 255, 255, 0.28); }
+
+/* ---------- skeletons ---------- */
+@keyframes ui-shimmer { to { background-position-x: -180%; } }
+
+.ui-sk-wrap { display: flex; flex-direction: column; gap: 10px; padding: 4px 0; }
+.ui-sk {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+}
+.ui-sk-card { flex-direction: column; align-items: stretch; gap: 9px; }
+.ui-sk-lines { flex: 1 1 auto; display: flex; flex-direction: column; gap: 7px; }
+.ui-sk-dot { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%; }
+.ui-sk-line { height: 10px; border-radius: 5px; }
+.ui-sk-line.w70 { width: 70%; } .ui-sk-line.w60 { width: 60%; } .ui-sk-line.w40 { width: 40%; }
+
+.ui-sk-dot, .ui-sk-line {
+    background: linear-gradient(100deg,
+        rgba(0,0,0,0.055) 30%, rgba(0,0,0,0.10) 48%, rgba(0,0,0,0.055) 66%);
+    background-size: 280% 100%;
+    animation: ui-shimmer 1.25s linear infinite;
+}
+
+/* ---------- swipe to reveal ---------- */
+.ui-swipe { position: relative; overflow: hidden; border-radius: 14px; }
+.ui-swipe-surface {
+    position: relative;
+    z-index: 1;
+    transition: transform 0.22s cubic-bezier(0.2, 0.7, 0.3, 1);
+    background: var(--card, #fff);
+    touch-action: pan-y;
+}
+.ui-swipe-actions {
+    position: absolute;
+    inset: 0 0 0 auto;
+    width: 88px;
+    display: flex;
+    align-items: stretch;
+}
+.ui-swipe-actions button {
+    flex: 1 1 auto;
+    border: none;
+    background: var(--danger, #d0524a);
+    color: #fff;
+    font: inherit;
+    font-size: 0.84rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+/* ---------- bulk selection ---------- */
+.ui-selectable.ui-selected {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+    border-radius: 12px;
+}
+.ui-bulkbar {
+    position: fixed;
+    left: 50%;
+    bottom: 68px;
+    transform: translateX(-50%);
+    z-index: 110;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+    border-radius: 50px;
+    background: rgba(22, 15, 28, 0.95);
+    color: #fff;
+    font-size: 0.88rem;
+    box-shadow: 0 6px 26px rgba(0, 0, 0, 0.34);
+    animation: ui-in 0.2s ease both;
+}
+.ui-bulkbar.hidden { display: none; }
+.ui-bulkbar button {
+    border: none;
+    background: rgba(255,255,255,0.16);
+    color: #fff;
+    font: inherit;
+    padding: 6px 13px;
+    border-radius: 50px;
+    cursor: pointer;
+}
+.ui-bulkbar button:hover { background: rgba(255,255,255,0.28); }
+
+/* Honour the same preference the rest of the site does. */
+@media (prefers-reduced-motion: reduce) {
+    .ui-enter, .ui-exit, .ui-undo, .ui-bulkbar { animation: none; }
+    .ui-sk-dot, .ui-sk-line { animation: none; }
+    .ui-swipe-surface { transition: none; }
+    .ui-ghost { rotate: none; scale: 1; }
+}
+
+/* ---------- command palette ---------- */
+.cmdk { position: fixed; inset: 0; z-index: 200; display: flex; justify-content: center; }
+.cmdk.hidden { display: none; }
+.cmdk-backdrop { position: absolute; inset: 0; background: rgba(14, 9, 18, 0.5); backdrop-filter: blur(3px); }
+.cmdk-panel {
+    position: relative;
+    margin-top: 11vh;
+    width: min(620px, calc(100vw - 28px));
+    max-height: 68vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--card, #fff);
+    border-radius: 18px;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.4);
+    overflow: hidden;
+    animation: ui-in 0.16s ease both;
+}
+.cmdk-panel input {
+    border: none;
+    border-bottom: 1px solid var(--border);
+    padding: 17px 20px;
+    font: inherit;
+    font-size: 16px;
+    background: none;
+    color: inherit;
+    outline: none;
+}
+.cmdk-list { overflow-y: auto; padding: 6px; }
+.cmdk-group {
+    padding: 10px 12px 5px;
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+}
+.cmdk-row {
+    display: flex; align-items: center; gap: 11px;
+    padding: 9px 12px; border-radius: 10px; cursor: pointer;
+}
+.cmdk-row.active { background: var(--accent); color: #fff; }
+.cmdk-row.active .cmdk-hint { color: rgba(255,255,255,0.8); }
+.cmdk-ico { flex: 0 0 auto; width: 20px; text-align: center; }
+.cmdk-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmdk-hint { flex: 0 0 auto; font-size: 0.8rem; color: var(--text-dim); }
+.cmdk-empty { padding: 26px; text-align: center; color: var(--text-dim); }
+.cmdk-foot {
+    border-top: 1px solid var(--border);
+    padding: 9px 14px; font-size: 0.74rem; color: var(--text-dim);
+}
+.cmdk-foot kbd {
+    display: inline-block; padding: 1px 5px; margin: 0 1px;
+    border: 1px solid var(--border); border-radius: 4px;
+    font-family: inherit; font-size: 0.72rem;
+}
+@media (prefers-reduced-motion: reduce) { .cmdk-panel { animation: none; } }

@@ -56,7 +56,7 @@ const CozyCookBook = {
     _buildDOM() {
         this.container.innerHTML = `
         <div class="ckb-root">
-            <div class="ckb-body"><div class="ckb-loading">Opening the cookbook…</div></div>
+            <div class="ckb-body">${UI.skeleton(3)}</div>
             <div class="ckb-toast hidden"></div>
         </div>`;
         this.dom = {
@@ -83,7 +83,7 @@ const CozyCookBook = {
 
     async refresh() {
         if (!Auth.client || !this.uid()) return;
-        if (this.dom) this.dom.body.innerHTML = '<div class="ckb-loading">Opening the cookbook…</div>';
+        if (this.dom) this.dom.body.innerHTML = UI.skeleton(3);
         try {
             const [folders, recipes, shares] = await Promise.all([
                 this.db('folders').select('*').order('name'),
@@ -128,8 +128,8 @@ const CozyCookBook = {
 
     isMine(row) { return row && (row.user_id || row.owner_id) === this.uid(); },
 
-    myFolders()     { return this.data.folders.filter(f => f.user_id === this.uid()); },
-    sharedFolders() { return this.data.folders.filter(f => f.user_id !== this.uid()); },
+    myFolders()     { return this._ordered(this.data.folders.filter(f => f.user_id === this.uid())); },
+    sharedFolders() { return this._ordered(this.data.folders.filter(f => f.user_id !== this.uid())); },
 
     // Invitations sent to me that I have not answered yet.
     pendingForMe() {
@@ -139,7 +139,80 @@ const CozyCookBook = {
         return this.data.shares.filter(s => s.folder_id === folderId && s.owner_id === this.uid());
     },
     recipesIn(folderId) {
-        return this.data.recipes.filter(r => r.folder_id === folderId);
+        return this._ordered(this.data.recipes.filter(r => r.folder_id === folderId));
+    },
+
+    // Manual order first, then whatever the list used to fall back to.
+    _ordered(list) {
+        return list.slice().sort((a, b) => {
+            const pa = a.position, pb = b.position;
+            if (pa != null && pb != null) return pa - pb;
+            if (pa != null) return -1;
+            if (pb != null) return 1;
+            return String(a.title || a.name || '').localeCompare(String(b.title || b.name || ''));
+        });
+    },
+
+    // ---------- drag, undo, search ----------
+
+    reorder(kind, id, beforeId, afterId) {
+        const table = kind === 'folder' ? 'folders' : 'recipes';
+        const list = kind === 'folder' ? this.data.folders : this.data.recipes;
+        const rec = list.find(x => x.id === id);
+        if (!rec) return;
+        const pos = (idx) => { const r = list.find(x => x.id === idx); return r ? r.position : null; };
+        rec.position = UI.between(beforeId ? pos(beforeId) : null, afterId ? pos(afterId) : null);
+        this._write(table, 'update', { position: rec.position }, { id });
+        this.render();
+    },
+
+    // Dropping a recipe on a cookbook moves it there, at the end.
+    moveRecipe(recipeId, folderId) {
+        const r = this.recipe(recipeId);
+        if (!r || r.folder_id === folderId) return;
+        const peers = this.recipesIn(folderId);
+        r.folder_id = folderId;
+        r.position = peers.length ? peers[peers.length - 1].position + UI.GAP : UI.GAP;
+        this._write('recipes', 'update', { folder_id: folderId, position: r.position }, { id: recipeId });
+        const f = this.folder(folderId);
+        this._toast(`Moved to ${f ? f.name : 'the cookbook'}`);
+        this.render();
+    },
+
+    // Reordering a checklist rewrites the whole jsonb array, which is fine:
+    // it is one column and the app already read-modify-writes it to tick a box.
+    reorderLine(kind, from, to) {
+        const r = this.recipe(this.view.id);
+        if (!r || !this.isMine(r)) return;
+        const key = kind === 'ing' ? 'ingredients' : 'steps';
+        const arr = (r[key] || []).slice();
+        if (from === to || from < 0 || from >= arr.length) return;
+        const [moved] = arr.splice(from, 1);
+        arr.splice(to, 0, moved);
+        this._saveLines(r, { [key]: arr });
+        this.render();
+    },
+
+    deleteWithUndo(kind, id, label) {
+        const table = kind === 'folder' ? 'folders' : 'recipes';
+        const list = kind === 'folder' ? 'folders' : 'recipes';
+        const snapshot = this.data[list].slice();
+        const backTo = this.view;
+        this.data[list] = this.data[list].filter(x => x.id !== id);
+        if (kind === 'recipe') this.go({ name: 'folder', id: (snapshot.find(x=>x.id===id)||{}).folder_id });
+        else this.go({ name: 'shelf' });
+
+        UI.undo(`Deleted ${label}`, {
+            onCommit: () => this._write(table, 'delete', null, { id }),
+            onUndo: () => { this.data[list] = snapshot; this.go(backTo); }
+        });
+    },
+
+    searchTerm: '',
+
+    _matchesSearch(text) {
+        const q = (this.searchTerm || '').trim().toLowerCase();
+        return !q || String(text || '').toLowerCase().includes(q);
     },
     recipe(id) { return this.data.recipes.find(r => r.id === id); },
     folder(id) { return this.data.folders.find(f => f.id === id); },
@@ -171,7 +244,8 @@ const CozyCookBook = {
         const card = (f, owned) => {
             const rs = this.recipesIn(f.id);
             const shares = this.sharesOf(f.id);
-            return `<button class="ckb-folder" data-folder="${f.id}">
+            return `<div class="ckb-folder" data-key="${f.id}" data-kind="folder" data-folder="${f.id}" role="button" tabindex="0">
+                <span class="ui-grip" data-drag-handle aria-hidden="true"></span>
                 <span class="ckb-folder-spine" aria-hidden="true"></span>
                 <span class="ckb-folder-main">
                     <strong>${this.esc(f.name)}</strong>
@@ -180,7 +254,7 @@ const CozyCookBook = {
                         owned ? '' : ` · from ${this.esc(this.who(f.user_id))}`}</small>
                 </span>
                 <span class="ckb-go" aria-hidden="true">›</span>
-            </button>`;
+            </div>`;
         };
 
         return `
@@ -196,9 +270,15 @@ const CozyCookBook = {
         </div>` : ''}
 
         <div class="ckb-card">
+            <input type="search" id="ckb-search" class="ckb-searchbox" placeholder="Search recipes and ingredients…"
+                   value="${this.esc(this.searchTerm)}" autocomplete="off" aria-label="Search recipes and ingredients">
+            ${this.searchTerm ? this._searchResults() : ''}
+        </div>
+
+        <div class="ckb-card"${this.searchTerm ? ' hidden' : ''}>
             <h3>Your cookbooks</h3>
-            ${mine.length ? mine.map(f => card(f, true)).join('')
-                          : '<p class="ckb-dim">No cookbooks yet. Make one below.</p>'}
+            <div class="ckb-list" data-drag="folder">${mine.length ? mine.map(f => card(f, true)).join('')
+                          : '<p class="ckb-dim">No cookbooks yet. Make one below.</p>'}</div>
             <div class="ckb-row">
                 <input type="text" id="ckb-new-folder" placeholder="New cookbook name" autocomplete="off">
                 <button class="ckb-btn ckb-primary" id="ckb-add-folder">Add</button>
@@ -209,6 +289,26 @@ const CozyCookBook = {
             <h3>Shared with you</h3>
             ${shared.map(f => card(f, false)).join('')}
         </div>` : ''}`;
+    },
+
+    _searchResults() {
+        const q = this.searchTerm.trim().toLowerCase();
+        const hits = this.data.recipes.filter(r =>
+            this._matchesSearch(r.title) ||
+            (r.ingredients || []).some(i => String(i.name || '').toLowerCase().includes(q)));
+        if (!hits.length) return '<p class="ckb-dim">Nothing matches that.</p>';
+        return `<div class="ckb-recipes">${hits.map(r => {
+            const f = this.folder(r.folder_id);
+            const via = !this._matchesSearch(r.title)
+                ? (r.ingredients || []).find(i => String(i.name || '').toLowerCase().includes(q)) : null;
+            return `<div class="ckb-recipe" data-recipe="${r.id}" role="button" tabindex="0">
+                <span class="ckb-recipe-main">
+                    <strong>${this.esc(r.title)}</strong>
+                    <small>${f ? this.esc(f.name) : 'no cookbook'}${via ? ` · ${this.esc(via.name)}` : ''}</small>
+                </span>
+                <span class="ckb-go" aria-hidden="true">›</span>
+            </div>`;
+        }).join('')}</div>`;
     },
 
     renderFolder(id) {
@@ -224,8 +324,9 @@ const CozyCookBook = {
             <h3>${this.esc(f.name)}</h3>
             <p class="ckb-dim">${rs.length} recipe${rs.length === 1 ? '' : 's'}${
                 owned ? '' : ` · ${this.esc(this.who(f.user_id))}'s cookbook, read only`}</p>
-            ${rs.length ? `<div class="ckb-recipes">${rs.map(r => `
-                <button class="ckb-recipe" data-recipe="${r.id}">
+            ${rs.length ? `<div class="ckb-recipes" data-drag="recipe">${rs.map(r => `
+                <div class="ckb-recipe" data-key="${r.id}" data-kind="recipe" data-recipe="${r.id}" role="button" tabindex="0">
+                    <span class="ui-grip" data-drag-handle aria-hidden="true"></span>
                     <span class="ckb-recipe-main">
                         <strong>${this.esc(r.title)}</strong>
                         <small>${r.meal ? this.esc(r.meal) + ' · ' : ''}${
@@ -233,7 +334,7 @@ const CozyCookBook = {
                             r.made_count ? ` · made ${r.made_count}×` : ''}</small>
                     </span>
                     <span class="ckb-go" aria-hidden="true">›</span>
-                </button>`).join('')}</div>`
+                </div>`).join('')}</div>`
                 : '<p class="ckb-dim">Nothing in here yet.</p>'}
         </div>
 
@@ -275,7 +376,8 @@ const CozyCookBook = {
         const ings = r.ingredients || [], steps = r.steps || [];
 
         const line = (x, i, kind) => `
-            <li class="ckb-line ${x.isChecked ? 'done' : ''}">
+            <li class="ckb-line ${x.isChecked ? 'done' : ''}" data-key="${kind}-${i}" data-i="${i}">
+                ${owned ? '<span class="ui-grip" data-drag-handle aria-hidden="true"></span>' : ''}
                 <label>
                     <input type="checkbox" data-check="${kind}" data-i="${i}" ${x.isChecked ? 'checked' : ''}>
                     <span>${this.esc(kind === 'ing' ? x.name : x.text)}</span>
@@ -301,7 +403,7 @@ const CozyCookBook = {
 
         <div class="ckb-card">
             <h3>Ingredients</h3>
-            ${ings.length ? `<ul class="ckb-list">${ings.map((x, i) => line(x, i, 'ing')).join('')}</ul>`
+            ${ings.length ? `<ul class="ckb-list ckb-lines" data-drag="ing">${ings.map((x, i) => line(x, i, 'ing')).join('')}</ul>`
                           : '<p class="ckb-dim">None listed.</p>'}
             ${owned ? `<div class="ckb-row">
                 <input type="text" id="ckb-new-ing" placeholder="Add an ingredient">
@@ -311,7 +413,7 @@ const CozyCookBook = {
 
         <div class="ckb-card">
             <h3>Steps</h3>
-            ${steps.length ? `<ol class="ckb-list ckb-steps">${steps.map((x, i) => line(x, i, 'step')).join('')}</ol>`
+            ${steps.length ? `<ol class="ckb-list ckb-steps ckb-lines" data-drag="step">${steps.map((x, i) => line(x, i, 'step')).join('')}</ol>`
                            : '<p class="ckb-dim">No steps yet.</p>'}
             ${owned ? `<div class="ckb-row">
                 <input type="text" id="ckb-new-step" placeholder="Add a step">
@@ -327,6 +429,45 @@ const CozyCookBook = {
         const $ = id => document.getElementById(id);
         const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn); };
         const all = (sel, fn) => this.container.querySelectorAll(sel).forEach(fn);
+
+        // search
+        const sb = $('ckb-search');
+        if (sb) {
+            sb.addEventListener('input', () => {
+                this.searchTerm = sb.value;
+                const at = sb.selectionStart;
+                this.render();
+                const again = document.getElementById('ckb-search');
+                if (again) { again.focus(); again.setSelectionRange(at, at); }
+            });
+            sb.addEventListener('keydown', e => {
+                if (e.key === 'Escape') { this.searchTerm = ''; this.render(); }
+            });
+        }
+
+        // drag: reorder cookbooks and recipes, and drop a recipe on a cookbook
+        this.container.querySelectorAll('[data-drag]').forEach(box => {
+            const kind = box.dataset.drag;
+            if (kind === 'ing' || kind === 'step') {
+                UI.dragList(box, {
+                    rowSelector: '.ckb-line', handle: '.ui-grip',
+                    onDrop: ({ id }) => {
+                        const rows = [...box.querySelectorAll('.ckb-line')];
+                        const to = rows.findIndex(n => n.dataset.key === id);
+                        const from = Number(id.split('-')[1]);
+                        this.reorderLine(kind, from, to);
+                    }
+                });
+                return;
+            }
+            UI.dragList(box, {
+                rowSelector: kind === 'folder' ? '.ckb-folder' : '.ckb-recipe',
+                handle: '.ui-grip',
+                acceptsDropOn: kind === 'recipe' ? '.ckb-folder' : null,
+                onDrop: ({ id, beforeId, afterId }) => this.reorder(kind, id, beforeId, afterId),
+                onDropOn: ({ id, targetId }) => this.moveRecipe(id, targetId)
+            });
+        });
 
         all('[data-shelf]', b => b.addEventListener('click', () => this.go({ name: 'shelf' })));
         all('[data-folder]', b => b.addEventListener('click', () => this.go({ name: 'folder', id: b.dataset.folder })));
@@ -378,12 +519,7 @@ const CozyCookBook = {
         const rs = this.recipesIn(id);
         if (rs.length) { this._toast(`Empty it first — ${rs.length} recipe(s) inside.`); return; }
         const f = this.folder(id);
-        if (!confirm(`Delete the cookbook "${f ? f.name : ''}"? This cannot be undone.`)) return;
-        this.data.folders = this.data.folders.filter(x => x.id !== id);
-        this.data.shares = this.data.shares.filter(s => s.folder_id !== id);
-        this._write('folders', 'delete', null, { id });
-        this._toast('Cookbook deleted');
-        this.go({ name: 'shelf' });
+        this.deleteWithUndo('folder', id, `"${f ? f.name : 'cookbook'}"`);
     },
 
     async addRecipe() {
@@ -403,11 +539,7 @@ const CozyCookBook = {
 
     async delRecipe(id) {
         const r = this.recipe(id);
-        if (!confirm(`Delete "${r ? r.title : 'this recipe'}"? This cannot be undone.`)) return;
-        this.data.recipes = this.data.recipes.filter(x => x.id !== id);
-        this._write('recipes', 'delete', null, { id });
-        this._toast('Recipe deleted');
-        this.go(r && r.folder_id ? { name: 'folder', id: r.folder_id } : { name: 'shelf' });
+        this.deleteWithUndo('recipe', id, `"${r ? r.title : 'recipe'}"`);
     },
 
     // Ingredients and steps live in one jsonb column each, so every edit is a

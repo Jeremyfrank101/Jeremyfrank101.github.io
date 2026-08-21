@@ -131,8 +131,126 @@ const Store = {
 
     // ---------- Homes ----------
 
+    // ---------- delete with undo ----------
+    //
+    // A delete used to stop and ask. Now it happens, says so, and offers a way
+    // back for a few seconds — the pattern people already know from mail
+    // clients. The write is held for the length of the undo window, so undoing
+    // costs nothing and never has to reverse anything on the server.
+    //
+    // Snapshots every row the cascade would take, not just the one named, so
+    // undoing a room brings its sub-rooms and their items back with it.
+
+    deleteWithUndo(kind, id, label) {
+        const data = this._data();
+        const snap = {
+            homes: data.homes.slice(), rooms: data.rooms.slice(),
+            items: data.items.slice(), projects: data.projects.slice(),
+            diyItems: data.diyItems.slice()
+        };
+        const removeLocally = {
+            home:    () => { data.rooms.forEach(r => { if (r.homeId === id) r.homeId = null; });
+                             data.homes = data.homes.filter(h => h.id !== id); },
+            room:    () => { const subs = data.rooms.filter(r => r.parentRoomId === id).map(r => r.id);
+                             const all = [id, ...subs];
+                             data.items = data.items.filter(i => !all.includes(i.roomId));
+                             data.rooms = data.rooms.filter(r => !all.includes(r.id)); },
+            item:    () => { data.items = data.items.filter(i => i.id !== id); },
+            project: () => { data.diyItems = data.diyItems.filter(d => d.projectId !== id);
+                             data.projects = data.projects.filter(p => p.id !== id); }
+        }[kind];
+        if (!removeLocally) return;
+
+        removeLocally();
+        App.render();
+
+        UI.undo(`Deleted ${label}`, {
+            onCommit: () => Sync.enqueue({ type: 'delete', kind: this.KIND_OF[kind], id }),
+            onUndo: () => {
+                Object.assign(data, snap);
+                App.render();
+            }
+        });
+    },
+
+    // ---------- manual ordering ----------
+    //
+    // A list is in the order the user dragged it into, and falls back to the
+    // old automatic order for anything not yet positioned. Rows without a
+    // position sort last rather than jumping to the top.
+
+    _ordered(list, fallback) {
+        return list.slice().sort((a, b) => {
+            const pa = a.position, pb = b.position;
+            if (pa != null && pb != null) return pa - pb;
+            if (pa != null) return -1;
+            if (pb != null) return 1;
+            return fallback(a, b);
+        });
+    },
+
+    KIND_OF: { home: 'homes', room: 'rooms', item: 'items', project: 'projects' },
+
+    _record(kind, id) {
+        return (this._data()[this.KIND_OF[kind]] || []).find(r => r.id === id);
+    },
+
+    // Drop `id` between two neighbours. One write: the new position is the
+    // midpoint, so nothing else on the list has to be renumbered.
+    reorder(kind, id, beforeId, afterId) {
+        const rec = this._record(kind, id);
+        if (!rec) return;
+        const before = beforeId ? this._record(kind, beforeId) : null;
+        const after  = afterId  ? this._record(kind, afterId)  : null;
+        let pos = UI.between(before ? before.position : null, after ? after.position : null);
+
+        // Two neighbours can end up too close for a float to sit between them
+        // after enough halvings. Respace that list and try again.
+        if (UI.needsRespace(before ? before.position : null, after ? after.position : null)) {
+            this._respace(kind, rec);
+            const b2 = beforeId ? this._record(kind, beforeId) : null;
+            const a2 = afterId ? this._record(kind, afterId) : null;
+            pos = UI.between(b2 ? b2.position : null, a2 ? a2.position : null);
+        }
+        rec.position = pos;
+        this._persist(kind, rec);
+    },
+
+    // Rare: hand every row in the affected list a fresh, evenly spaced value.
+    _respace(kind, sample) {
+        const all = this._data()[this.KIND_OF[kind]] || [];
+        const peers = kind === 'item'
+            ? all.filter(r => (r.roomId || null) === (sample.roomId || null))
+            : kind === 'room'
+                ? all.filter(r => (r.parentRoomId || null) === (sample.parentRoomId || null))
+                : all;
+        this._ordered(peers, () => 0).forEach((r, i) => {
+            r.position = (i + 1) * UI.GAP;
+            this._persist(kind, r);
+        });
+    },
+
+    _persist(kind, rec) {
+        const table = this.KIND_OF[kind];
+        const to = { homes: Sync.toHome, rooms: Sync.toRoom, items: Sync.toItem, projects: Sync.toProject }[table];
+        Sync.enqueue({ type: 'upsert', kind: table, row: to.call(Sync, rec) });
+    },
+
+    // Dropping an item onto a room re-files it, and puts it at the end of
+    // that room's list rather than wherever its old position happened to be.
+    moveItemToRoom(itemId, roomId) {
+        const item = this._record('item', itemId);
+        if (!item || (item.roomId || null) === (roomId || null)) return false;
+        const peers = this.getItems().filter(i => (i.roomId || null) === (roomId || null));
+        const last = peers.length ? peers[peers.length - 1].position : null;
+        item.roomId = roomId || null;
+        item.position = last != null ? last + UI.GAP : UI.GAP;
+        this._persist('item', item);
+        return true;
+    },
+
     getHomes() {
-        return this._data().homes.slice().sort((a, b) => a.name.localeCompare(b.name));
+        return this._ordered(this._data().homes, (a, b) => a.name.localeCompare(b.name));
     },
 
     getHome(id) {
@@ -187,11 +305,11 @@ const Store = {
     },
 
     getTopLevelRooms() {
-        return this.getRooms().filter(r => !r.parentRoomId).sort((a, b) => a.name.localeCompare(b.name));
+        return this._ordered(this.getRooms().filter(r => !r.parentRoomId), (a, b) => a.name.localeCompare(b.name));
     },
 
     getSubRooms(parentId) {
-        return this.getRooms().filter(r => r.parentRoomId === parentId).sort((a, b) => a.name.localeCompare(b.name));
+        return this._ordered(this.getRooms().filter(r => r.parentRoomId === parentId), (a, b) => a.name.localeCompare(b.name));
     },
 
     addRoom(room) {
@@ -283,7 +401,7 @@ const Store = {
     // ---------- Items ----------
 
     getItems() {
-        return this._data().items.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        return this._ordered(this._data().items, (a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     },
 
     getItem(id) {
@@ -330,7 +448,7 @@ const Store = {
     // ---------- Projects ----------
 
     getProjects() {
-        return this._data().projects.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        return this._ordered(this._data().projects, (a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     },
 
     getProject(id) {

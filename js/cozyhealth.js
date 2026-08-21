@@ -366,7 +366,7 @@ const CozyHealth = {
             <div class="chx-tabs">
                 ${this.TABS.map(t => `<button class="chx-tab ${t.id === this.tab ? 'active' : ''}" data-tab="${t.id}">${t.label}</button>`).join('')}
             </div>
-            <div class="chx-body"><div class="chx-loading">Loading your day…</div></div>
+            <div class="chx-body">${UI.skeleton(3)}</div>
             <div class="chx-toast hidden"></div>
         </div>`;
 
@@ -386,7 +386,7 @@ const CozyHealth = {
     },
 
     _setBusy(on) {
-        if (on && this.dom) this.dom.body.innerHTML = '<div class="chx-loading">Loading your day…</div>';
+        if (on && this.dom) this.dom.body.innerHTML = UI.skeleton(3);
     },
 
     _toast(msg) {
@@ -1600,11 +1600,18 @@ const CozyHealth = {
         return full;
     },
 
+    // Deleting an entry happens, and offers a way back — the write is held
+    // for the length of the undo window, so undoing never has to reverse
+    // anything on the server.
     async remove(table, id, key) {
-        if (!confirm('Delete this entry?')) return;
+        const row = this.data[key].find(r => r.id === id);
+        const snapshot = this.data[key].slice();
         this.data[key] = this.data[key].filter(r => r.id !== id);
-        this._queueWrite(table, 'delete', null, { id });
         this.render();
+        UI.undo(`Deleted ${row && row.name ? `"${row.name}"` : 'that entry'}`, {
+            onCommit: () => this._queueWrite(table, 'delete', null, { id }),
+            onUndo: () => { this.data[key] = snapshot; this.render(); }
+        });
     },
 
     // ---------- meditation timer ----------

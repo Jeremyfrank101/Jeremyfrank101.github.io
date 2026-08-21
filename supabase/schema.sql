@@ -198,3 +198,24 @@ create policy cozyhome_photos_own_objects on storage.objects
         bucket_id = 'cozyhome-photos'
         and (storage.foldername(name))[1] = auth.uid()::text
     );
+
+
+-- ---------------------------------------------------------------------------
+-- Manual ordering, for drag and drop.
+--
+-- position is a float rather than an integer so a row can be dropped between
+-- two neighbours by taking their midpoint. That keeps a move to a single
+-- UPDATE instead of renumbering everything after it — which matters because
+-- every write goes through the offline queue, and renumbering a twenty-item
+-- list would put twenty writes on it.
+--
+-- Backfilled from whatever order each list was displayed in, spaced 1024 apart
+-- so there is room to insert without immediately needing tiny fractions. The
+-- app respaces a list only if two neighbours ever get too close for a float to
+-- sit between them.
+-- ---------------------------------------------------------------------------
+
+alter table public.homes    add column if not exists position double precision;
+alter table public.rooms    add column if not exists position double precision;
+alter table public.items    add column if not exists position double precision;
+alter table public.projects add column if not exists position double precision;

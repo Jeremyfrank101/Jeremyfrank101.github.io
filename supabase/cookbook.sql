@@ -68,3 +68,9 @@ using (
            or (c.shared_with = auth.uid() and c.owner_id = profiles.user_id)
     )
 );
+
+
+-- Manual ordering for drag and drop. See supabase/schema.sql for why these
+-- are floats rather than integers.
+alter table "CozyCookBookSchema".folders add column if not exists position double precision;
+alter table "CozyCookBookSchema".recipes add column if not exists position double precision;

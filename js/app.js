@@ -10,6 +10,7 @@ const App = {
         ThemeEngine.init();
         Modal.init();
         Apps.init();
+        Palette.init();
         this.bindEvents();
 
         if (!Auth.configured()) {
@@ -182,6 +183,18 @@ const App = {
         });
 
         // Filter tabs
+        const search = document.getElementById('home-search');
+        if (search) {
+            search.addEventListener('input', () => {
+                this.searchTerm = search.value;
+                this._runSearch();
+            });
+            // Escape clears rather than making you select and delete.
+            search.addEventListener('keydown', e => {
+                if (e.key === 'Escape') { search.value = ''; this.searchTerm = ''; this._runSearch(); }
+            });
+        }
+
         document.querySelectorAll('.filter-tab').forEach(tab => {
             tab.addEventListener('click', () => {
                 document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
@@ -278,7 +291,7 @@ const App = {
                     ? `<div class="section"><div class="section-body"><div class="empty-note">
                            Couldn't load your home. <button class="btn-small" onclick="App.retryHydrate()">Try again</button>
                        </div></div></div>`
-                    : `<div class="section"><div class="section-body"><div class="empty-note">Loading your home…</div></div></div>`;
+                    : `<div class="section"><div class="section-body">${UI.skeleton(4)}</div></div>`;
             }
             return;
         }
@@ -299,9 +312,199 @@ const App = {
             case 'projects': html = Views.renderProjects(); break;
             case 'info': html = Views.renderInfo(); break;
         }
-        container.innerHTML = html;
+        container.innerHTML = this._applySearch(html);
+        this._wireInteractions(container);
+    },
 
+    // ---------- search ----------
+    //
+    // Five filter tabs and no way to find anything by name. This hides rows
+    // whose text does not match, and any section left with nothing in it.
 
+    searchTerm: '',
+
+    _applySearch(html) { return html; },
+
+    _runSearch() {
+        const q = (this.searchTerm || '').trim().toLowerCase();
+        const container = document.getElementById('list-container');
+        if (!container) return;
+        let shown = 0;
+        container.querySelectorAll('.list-row').forEach(row => {
+            const hit = !q || row.textContent.toLowerCase().includes(q);
+            row.classList.toggle('hidden', !hit);
+            if (hit) shown++;
+        });
+        container.querySelectorAll('.section').forEach(sec => {
+            const any = [...sec.querySelectorAll('.list-row')].some(r => !r.classList.contains('hidden'));
+            sec.classList.toggle('hidden', !!q && !any);
+        });
+        const none = document.getElementById('search-none');
+        if (none) none.classList.toggle('hidden', !q || shown > 0);
+    },
+
+    // ---------- drag, swipe, bulk ----------
+
+    _wireInteractions(container) {
+        const bodies = [...container.querySelectorAll('[data-drag]')];
+
+        bodies.forEach(body => {
+            const kind = body.dataset.drag;
+            UI.dragList(body, {
+                rowSelector: '.list-row',
+                handle: '.ui-grip',
+                // items can be dropped between other items in any list, or
+                // straight onto a room to be re-filed into it
+                groups: kind === 'item' ? bodies.filter(b => b.dataset.drag === 'item') : [],
+                acceptsDropOn: kind === 'item' ? '.list-row[data-kind="room"]' : null,
+                onDrop: ({ id, toContainer, beforeId, afterId }) => {
+                    // Dropping into a different room's list re-files it as
+                    // well as reordering — that is what the gesture means,
+                    // and only moving it within the list would look broken.
+                    if (kind === 'item' && toContainer.dataset.room !== undefined
+                        && toContainer !== body) {
+                        const to = toContainer.dataset.room || null;
+                        if (Store.moveItemToRoom(id, to)) {
+                            const room = to ? Store.getRoom(to) : null;
+                            this._toastMove(`Moved to ${room ? room.name : 'No Room'}`);
+                        }
+                    }
+                    Store.reorder(kind, id, beforeId, afterId);
+                    this.render();
+                },
+                onDropOn: ({ id, targetId }) => {
+                    const room = Store.getRoom(targetId);
+                    if (Store.moveItemToRoom(id, targetId)) {
+                        const item = Store.getItems().find(i => i.id === id);
+                        this._toastMove(`Moved ${item ? item.name : 'item'} to ${room ? room.name : 'the room'}`);
+                    }
+                    this.render();
+                }
+            });
+            UI.swipe(body, { rowSelector: '.list-row' });
+        });
+
+        this._wireBulk(container);
+        if (this.searchTerm) this._runSearch();
+    },
+
+    // ---------- bulk selection ----------
+    //
+    // Long-press a row (or ctrl/cmd-click) to start selecting, then move or
+    // delete the lot in one go instead of opening each one in turn.
+
+    selection: new Set(),
+
+    _wireBulk(container) {
+        let holdTimer = null;
+        container.addEventListener('pointerdown', e => {
+            const row = e.target.closest('.list-row[data-key]');
+            if (!row) return;
+            if (e.metaKey || e.ctrlKey) { this._toggleSelect(row); return; }
+            if (this.selection.size) return;           // already selecting
+            holdTimer = setTimeout(() => this._toggleSelect(row), 480);
+        });
+        ['pointerup', 'pointermove', 'pointercancel'].forEach(ev =>
+            container.addEventListener(ev, () => clearTimeout(holdTimer)));
+
+        // a tap while selecting adds or removes rather than opening
+        container.addEventListener('click', e => {
+            if (!this.selection.size) return;
+            const row = e.target.closest('.list-row[data-key]');
+            if (!row) return;
+            e.preventDefault();
+            e.stopPropagation();
+            this._toggleSelect(row);
+        }, true);
+    },
+
+    _toggleSelect(row) {
+        const id = row.dataset.key;
+        if (this.selection.has(id)) this.selection.delete(id); else this.selection.add(id);
+        row.classList.toggle('ui-selected', this.selection.has(id));
+        row.classList.add('ui-selectable');
+        this._paintBulkBar();
+    },
+
+    clearSelection() {
+        this.selection.clear();
+        document.querySelectorAll('.ui-selected').forEach(n => n.classList.remove('ui-selected'));
+        this._paintBulkBar();
+    },
+
+    _paintBulkBar() {
+        let bar = document.getElementById('ui-bulk');
+        if (!bar) {
+            bar = document.createElement('div');
+            bar.id = 'ui-bulk';
+            bar.className = 'ui-bulkbar hidden';
+            document.body.appendChild(bar);
+        }
+        const n = this.selection.size;
+        if (!n) { bar.classList.add('hidden'); return; }
+        bar.classList.remove('hidden');
+        bar.innerHTML = `<span>${n} selected</span>
+            <button type="button" data-bulk="move">Move to room…</button>
+            <button type="button" data-bulk="delete">Delete</button>
+            <button type="button" data-bulk="cancel">Cancel</button>`;
+        bar.querySelectorAll('[data-bulk]').forEach(b =>
+            b.addEventListener('click', () => this._runBulk(b.dataset.bulk)));
+    },
+
+    _runBulk(action) {
+        const ids = [...this.selection];
+        if (action === 'cancel') return this.clearSelection();
+
+        if (action === 'move') {
+            const rooms = Store.getTopLevelRooms();
+            if (!rooms.length) { this._toastMove('No rooms to move into yet.'); return; }
+            const names = rooms.map((r, i) => `${i + 1}. ${r.name}`).join('\n');
+            const pick = prompt(`Move ${ids.length} item(s) to which room?\n\n${names}`);
+            const idx = Number(pick) - 1;
+            if (!rooms[idx]) return;
+            let moved = 0;
+            ids.forEach(id => { if (Store.moveItemToRoom(id, rooms[idx].id)) moved++; });
+            this.clearSelection();
+            this.render();
+            this._toastMove(`Moved ${moved} item${moved === 1 ? '' : 's'} to ${rooms[idx].name}`);
+            return;
+        }
+
+        if (action === 'delete') {
+            const data = Sync.cache;
+            const snap = { rooms: data.rooms.slice(), items: data.items.slice(), projects: data.projects.slice() };
+            const kinds = {};
+            ids.forEach(id => {
+                const row = document.querySelector(`.list-row[data-key="${CSS.escape(id)}"]`);
+                const kind = row ? row.dataset.kind : null;
+                if (!kind) return;
+                (kinds[kind] ||= []).push(id);
+                const bucket = Store.KIND_OF[kind];
+                data[bucket] = data[bucket].filter(r => r.id !== id);
+            });
+            this.clearSelection();
+            this.render();
+            UI.undo(`Deleted ${ids.length} item${ids.length === 1 ? '' : 's'}`, {
+                onCommit: () => Object.entries(kinds).forEach(([kind, list]) =>
+                    list.forEach(id => Sync.enqueue({ type: 'delete', kind: Store.KIND_OF[kind], id }))),
+                onUndo: () => { Object.assign(data, snap); this.render(); }
+            });
+        }
+    },
+
+    _toastMove(msg) {
+        let t = document.getElementById('app-toast');
+        if (!t) {
+            t = document.createElement('div');
+            t.id = 'app-toast';
+            t.className = 'ui-undo';
+            document.body.appendChild(t);
+        }
+        t.innerHTML = `<span class="ui-undo-msg"></span>`;
+        t.querySelector('.ui-undo-msg').textContent = msg;
+        t.classList.remove('hidden');
+        clearTimeout(this._toastT);
+        this._toastT = setTimeout(() => t.classList.add('hidden'), 2200);
     }
 };
 

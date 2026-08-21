@@ -1207,3 +1207,35 @@ body {
     .app-card-icon { width: 52px; height: 52px; font-size: 25px; border-radius: 15px; }
     .app-card-blurb { display: none; }
 }
+
+/* Search across the account. Sticks directly beneath the filter tabs, which
+   are themselves sticky — without this it scrolls up underneath them. */
+.search-bar {
+    background: var(--page-bg);
+    padding: 0 16px 10px;
+    max-width: 800px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+/* Tabs + search are one sticky unit, so the search field cannot slide under
+   the tabs when the list scrolls. */
+.toolbar-sticky {
+    position: sticky;
+    top: 60px;
+    z-index: 90;
+    background: var(--page-bg);
+}
+.toolbar-sticky .filter-bar { position: static; top: auto; z-index: auto; }
+.search-bar input {
+    width: 100%;
+    padding: 10px 16px;
+    border: 1.5px solid var(--border);
+    border-radius: 50px;
+    font-size: 15px;
+    font-family: inherit;
+    background: var(--card);
+    color: inherit;
+    outline: none;
+}
+.search-bar input:focus { border-color: var(--accent); }

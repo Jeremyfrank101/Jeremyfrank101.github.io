@@ -567,35 +567,35 @@ const Sync = {
 
     toHome(h) {
         return { id: h.id, name: h.name,
-                 photo: h.photoPath || null, created_at: h.createdAt };
+                 photo: h.photoPath || null, position: h.position ?? null, created_at: h.createdAt };
     },
     fromHome(h) {
         return { id: h.id, name: h.name, ownerId: h.user_id,
-                 photoPath: h.photo, photo: null, createdAt: h.created_at };
+                 photoPath: h.photo, photo: null, position: h.position, createdAt: h.created_at };
     },
 
     toRoom(r) {
         return { id: r.id, name: r.name, parent_room_id: r.parentRoomId || null,
                  home_id: r.homeId || null, is_private: !!r.isPrivate,
-                 photo: r.photoPath || null, created_at: r.createdAt };
+                 photo: r.photoPath || null, position: r.position ?? null, created_at: r.createdAt };
     },
     fromRoom(r) {
         return { id: r.id, name: r.name, parentRoomId: r.parent_room_id,
                  homeId: r.home_id, ownerId: r.user_id, isPrivate: r.is_private,
-                 photoPath: r.photo, photo: null, createdAt: r.created_at };
+                 photoPath: r.photo, photo: null, position: r.position, createdAt: r.created_at };
     },
 
     toItem(i) {
         return { id: i.id, name: i.name, description: i.desc || '',
                  item_type: i.itemType || 'Other', room_id: i.roomId || null,
                  is_private: !!i.isPrivate,
-                 photo: i.photoPath || null, created_at: i.createdAt };
+                 photo: i.photoPath || null, position: i.position ?? null, created_at: i.createdAt };
     },
     fromItem(i) {
         return { id: i.id, name: i.name, desc: i.description || '',
                  itemType: i.item_type, roomId: i.room_id, ownerId: i.user_id,
                  isPrivate: i.is_private,
-                 photoPath: i.photo, photo: null, createdAt: i.created_at };
+                 photoPath: i.photo, photo: null, position: i.position, createdAt: i.created_at };
     },
 
     toProject(p) {
@@ -604,7 +604,7 @@ const Sync = {
                  is_completed: !!p.isCompleted, completed_at: p.completedAt || null,
                  room_ids: p.roomIds || [], item_ids: p.itemIds || [],
                  options: p.options || [], tasks: p.tasks || [],
-                 is_diy: !!p.isDIY, photo: p.photoPath || null, created_at: p.createdAt };
+                 is_diy: !!p.isDIY, photo: p.photoPath || null, position: p.position ?? null, created_at: p.createdAt };
     },
     fromProject(p) {
         return { id: p.id, name: p.name, desc: p.description || '',
@@ -613,7 +613,7 @@ const Sync = {
                  roomIds: p.room_ids || [], itemIds: p.item_ids || [],
                  options: p.options || [], tasks: p.tasks || [],
                  isDIY: p.is_diy, ownerId: p.user_id,
-                 photoPath: p.photo, photo: null, createdAt: p.created_at };
+                 photoPath: p.photo, photo: null, position: p.position, createdAt: p.created_at };
     },
 
     toDIY(d) {

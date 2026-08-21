@@ -1744,3 +1744,19 @@
     border-top: 1px solid var(--border);
 }
 .chx-recipe-log .chx-unit { font-size: 0.78rem; padding: 8px 11px; }
+
+/* CozyCookBook — search box, and room for the drag grips. */
+.ckb-searchbox {
+    width: 100%;
+    padding: 10px 16px;
+    border: 1.5px solid var(--border);
+    border-radius: 50px;
+    font: inherit;
+    font-size: 15px;
+    background: var(--card);
+    color: inherit;
+    outline: none;
+}
+.ckb-searchbox:focus { border-color: var(--accent); }
+.ckb-folder, .ckb-recipe { touch-action: pan-y; }
+.ckb-lines .ckb-line { touch-action: pan-y; }
