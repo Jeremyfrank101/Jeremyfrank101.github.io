@@ -7,6 +7,18 @@
 -- can never read or write another's rows even though the browser holds the
 -- anon key. user_id defaults to auth.uid() so the client never has to set it.
 
+-- ---------------------------------------------------------------- homes ----
+--
+-- A Home groups rooms. One account can have several.
+
+create table if not exists public.homes (
+    id         uuid primary key default gen_random_uuid(),
+    user_id    uuid not null default auth.uid() references auth.users(id) on delete cascade,
+    name       text not null,
+    photo      text,
+    created_at timestamptz not null default now()
+);
+
 -- ---------------------------------------------------------------- rooms ----
 
 create table if not exists public.rooms (
@@ -14,9 +26,16 @@ create table if not exists public.rooms (
     user_id        uuid not null default auth.uid() references auth.users(id) on delete cascade,
     name           text not null,
     parent_room_id uuid references public.rooms(id) on delete cascade,
+    -- SET NULL, not CASCADE: deleting a home must not wipe every room and item
+    -- inside it. Rooms fall back to "No Home", which is recoverable.
+    home_id        uuid references public.homes(id) on delete set null,
     photo          text,
     created_at     timestamptz not null default now()
 );
+
+-- For databases created before homes existed.
+alter table public.rooms
+    add column if not exists home_id uuid references public.homes(id) on delete set null;
 
 -- ---------------------------------------------------------------- items ----
 
@@ -90,7 +109,9 @@ alter table public.items add constraint items_room_id_fkey
 
 -- --------------------------------------------------------------- indexes ----
 
+create index if not exists homes_user_idx        on public.homes (user_id);
 create index if not exists rooms_user_idx        on public.rooms (user_id);
+create index if not exists rooms_home_idx        on public.rooms (home_id);
 create index if not exists rooms_parent_idx      on public.rooms (parent_room_id);
 create index if not exists items_user_idx        on public.items (user_id);
 create index if not exists items_room_idx        on public.items (room_id);
@@ -100,6 +121,7 @@ create index if not exists diy_items_project_idx on public.diy_items (project_id
 
 -- ------------------------------------------------------------------ RLS ----
 
+alter table public.homes       enable row level security;
 alter table public.rooms       enable row level security;
 alter table public.items       enable row level security;
 alter table public.projects    enable row level security;
@@ -112,7 +134,7 @@ alter table public.preferences enable row level security;
 do $$
 declare t text;
 begin
-    foreach t in array array['rooms', 'items', 'projects', 'diy_items', 'preferences']
+    foreach t in array array['homes', 'rooms', 'items', 'projects', 'diy_items', 'preferences']
     loop
         execute format('drop policy if exists %I on public.%I', t || '_own_rows', t);
         execute format(
@@ -127,7 +149,7 @@ end $$;
 
 -- Anonymous visitors get nothing. RLS with no permissive policy for the anon
 -- role already denies everything, but revoking is explicit and cheap.
-revoke all on public.rooms, public.items, public.projects,
+revoke all on public.homes, public.rooms, public.items, public.projects,
                 public.diy_items, public.preferences
     from anon;
 

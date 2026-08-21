@@ -214,6 +214,7 @@ const App = {
             if (!action) return;
             this.closeMenus();
             switch (action) {
+                case 'add-home': Modal.addHome(); break;
                 case 'add-room': Modal.addRoom(); break;
                 case 'add-item': Modal.addItem(); break;
                 case 'add-project': Modal.addProject(); break;

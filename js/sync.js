@@ -14,6 +14,7 @@ const Sync = {
 
     // camelCase in the app, snake_case in Postgres.
     TABLES: {
+        homes:     'homes',
         rooms:     'rooms',
         items:     'items',
         projects:  'projects',
@@ -29,7 +30,7 @@ const Sync = {
     // ---------- lifecycle ----------
 
     reset() {
-        this.cache = { rooms: [], items: [], projects: [], diyItems: [], theme: 'California Cabana' };
+        this.cache = { homes: [], rooms: [], items: [], projects: [], diyItems: [], theme: 'California Cabana' };
     },
 
     onStatus(fn) { this._listeners.push(fn); },
@@ -59,7 +60,8 @@ const Sync = {
         this._setStatus('syncing');
 
         try {
-            const [rooms, items, projects, diyItems, prefs] = await Promise.all([
+            const [homes, rooms, items, projects, diyItems, prefs] = await Promise.all([
+                this.client.from('homes').select('*'),
                 this.client.from('rooms').select('*'),
                 this.client.from('items').select('*'),
                 this.client.from('projects').select('*'),
@@ -67,9 +69,10 @@ const Sync = {
                 this.client.from('preferences').select('*').maybeSingle()
             ]);
 
-            const firstError = [rooms, items, projects, diyItems, prefs].find(r => r.error);
+            const firstError = [homes, rooms, items, projects, diyItems, prefs].find(r => r.error);
             if (firstError) throw firstError.error;
 
+            this.cache.homes    = (homes.data    || []).map(this.fromHome);
             this.cache.rooms    = (rooms.data    || []).map(this.fromRoom);
             this.cache.items    = (items.data    || []).map(this.fromItem);
             this.cache.projects = (projects.data || []).map(this.fromProject);
@@ -79,8 +82,9 @@ const Sync = {
             // How much this account already had on the server, captured before
             // any local writes can land, so the import decision is made on the
             // server state rather than on a cache someone may have added to.
-            const fetchedCount = this.cache.rooms.length + this.cache.items.length +
-                                 this.cache.projects.length + this.cache.diyItems.length;
+            const fetchedCount = this.cache.homes.length + this.cache.rooms.length +
+                                 this.cache.items.length + this.cache.projects.length +
+                                 this.cache.diyItems.length;
 
             await this._resolvePhotoUrls();     // turn stored paths into <img> urls
             await this.flush();                 // drain anything queued earlier
@@ -103,7 +107,7 @@ const Sync = {
         try { legacy = JSON.parse(raw); } catch { return; }
         if (!legacy) return;
 
-        const counts = ['rooms', 'items', 'projects', 'diyItems']
+        const counts = ['homes', 'rooms', 'items', 'projects', 'diyItems']
             .reduce((n, k) => n + (Array.isArray(legacy[k]) ? legacy[k].length : 0), 0);
         if (!counts) { localStorage.removeItem(this.LEGACY_KEY); return; }
 
@@ -125,7 +129,7 @@ const Sync = {
             // Legacy records carry base64 in `photo`. Upload those to Storage
             // first and hang the resulting path off the record, so the row
             // mappers below write a path rather than dropping the image.
-            const kinds = ['rooms', 'projects', 'items', 'diyItems'];
+            const kinds = ['homes', 'rooms', 'projects', 'items', 'diyItems'];
             let uploaded = 0, failed = 0;
             for (const kind of kinds) {
                 for (const rec of legacy[kind] || []) {
@@ -145,6 +149,7 @@ const Sync = {
                 console.info(`[Sync] imported ${uploaded} photo(s)${failed ? `, ${failed} failed` : ''}`);
             }
 
+            await push('homes',    legacy.homes    || [], h => this.toHome(h));
             await push('rooms',    legacy.rooms    || [], r => this.toRoom(r));
             await push('projects', legacy.projects || [], p => this.toProject(p));
             await push('items',    legacy.items    || [], i => this.toItem(i));
@@ -163,6 +168,7 @@ const Sync = {
                 const seen = new Set(this.cache[key].map(r => r.id));
                 rows.forEach(r => { if (!seen.has(r.id)) this.cache[key].push(r); });
             };
+            mergeIn('homes',    legacy.homes    || []);
             mergeIn('rooms',    legacy.rooms    || []);
             mergeIn('items',    legacy.items    || []);
             mergeIn('projects', legacy.projects || []);
@@ -297,7 +303,7 @@ const Sync = {
     // One batched request per table instead of one per photo.
     async _resolvePhotoUrls() {
         const jobs = [];
-        for (const key of ['rooms', 'items', 'projects', 'diyItems']) {
+        for (const key of ['homes', 'rooms', 'items', 'projects', 'diyItems']) {
             for (const row of this.cache[key]) {
                 if (row.photoPath) jobs.push(row);
             }
@@ -344,12 +350,23 @@ const Sync = {
     // Postgres is snake_case; the app has always used camelCase. Convert at
     // the boundary rather than renaming fields across every view.
 
+    toHome(h) {
+        return { id: h.id, name: h.name,
+                 photo: h.photoPath || null, created_at: h.createdAt };
+    },
+    fromHome(h) {
+        return { id: h.id, name: h.name,
+                 photoPath: h.photo, photo: null, createdAt: h.created_at };
+    },
+
     toRoom(r) {
         return { id: r.id, name: r.name, parent_room_id: r.parentRoomId || null,
+                 home_id: r.homeId || null,
                  photo: r.photoPath || null, created_at: r.createdAt };
     },
     fromRoom(r) {
         return { id: r.id, name: r.name, parentRoomId: r.parent_room_id,
+                 homeId: r.home_id,
                  photoPath: r.photo, photo: null, createdAt: r.created_at };
     },
 

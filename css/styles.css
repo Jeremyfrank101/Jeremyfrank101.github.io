@@ -168,6 +168,42 @@ body {
     padding: 10px 12px;
 }
 
+/* Home grouping header in the Room tab */
+
+.home-group-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 18px 2px 8px;
+    padding: 4px 2px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.home-group-header:first-child { margin-top: 4px; }
+.home-group-header:not([onclick]) { cursor: default; }
+
+.home-group-header .home-icon { font-size: 17px; }
+
+.home-group-header .home-photo {
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    object-fit: cover;
+}
+
+.home-group-header .home-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 /* Sync indicator in the header. Silent when everything is saved. */
 .sync-status {
     position: absolute;

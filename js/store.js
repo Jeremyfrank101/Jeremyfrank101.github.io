@@ -59,6 +59,53 @@ const Store = {
         if (Auth.getUser()) Sync.enqueue({ type: 'theme', theme: name });
     },
 
+    // ---------- Homes ----------
+
+    getHomes() {
+        return this._data().homes.slice().sort((a, b) => a.name.localeCompare(b.name));
+    },
+
+    getHome(id) {
+        return this._data().homes.find(h => h.id === id);
+    },
+
+    addHome(home) {
+        const h = {
+            id: crypto.randomUUID(),
+            name: home.name,
+            photo: null,
+            photoPath: null,
+            createdAt: new Date().toISOString()
+        };
+        this._data().homes.push(h);
+        Sync.enqueue({ type: 'upsert', kind: 'homes', row: Sync.toHome(h) });
+        this._applyPhoto('homes', h, home.photo || null);
+        return h;
+    },
+
+    updateHome(id, updates) {
+        const home = this.getHome(id);
+        if (!home) return;
+        const { photo, ...rest } = updates;
+        Object.assign(home, rest);
+        if ('photo' in updates) this._applyPhoto('homes', home, photo);
+        Sync.enqueue({ type: 'upsert', kind: 'homes', row: Sync.toHome(home) });
+    },
+
+    deleteHome(id) {
+        const data = this._data();
+        // Mirrors ON DELETE SET NULL in the schema: the rooms survive and fall
+        // back to "No Home". Keeping the cache in step avoids the kind of drift
+        // that previously left Postgres holding rows the cache thought were gone.
+        data.rooms.forEach(r => { if (r.homeId === id) r.homeId = null; });
+        data.homes = data.homes.filter(h => h.id !== id);
+        Sync.enqueue({ type: 'delete', kind: 'homes', id });
+    },
+
+    getRoomsForHome(homeId) {
+        return this.getTopLevelRooms().filter(r => (r.homeId || null) === (homeId || null));
+    },
+
     // ---------- Rooms ----------
 
     getRooms() {
@@ -82,6 +129,7 @@ const Store = {
             id: crypto.randomUUID(),
             name: room.name,
             parentRoomId: room.parentRoomId || null,
+            homeId: room.homeId || null,
             photo: null,
             photoPath: null,
             createdAt: new Date().toISOString()
@@ -111,6 +159,54 @@ const Store = {
         data.rooms = data.rooms.filter(r => !allIds.includes(r.id));
         // Deleting the parent cascades in Postgres; one delete is enough.
         Sync.enqueue({ type: 'delete', kind: 'rooms', id });
+    },
+
+    // ---------- Room restructuring ----------
+    //
+    // The app renders exactly two levels: rooms and their sub-rooms. Anything
+    // deeper would be invisible, so conversions are gated rather than allowed
+    // to create a nesting the UI cannot show.
+
+    // Rooms a given room could legally be nested under.
+    getConversionTargets(roomId) {
+        const room = this.getRoom(roomId);
+        if (!room || room.parentRoomId) return [];        // already a sub-room
+        if (this.getSubRooms(roomId).length) return [];   // would make 3 levels
+        return this.getTopLevelRooms().filter(r => r.id !== roomId);
+    },
+
+    canConvertToSubRoom(roomId) {
+        const room = this.getRoom(roomId);
+        if (!room) return { ok: false, reason: 'That room no longer exists.' };
+        if (room.parentRoomId) return { ok: false, reason: 'This is already a sub-room.' };
+        if (this.getSubRooms(roomId).length) {
+            return { ok: false, reason: 'This room has sub-rooms of its own. Move or delete them first — CozyHome only nests one level deep.' };
+        }
+        if (!this.getConversionTargets(roomId).length) {
+            return { ok: false, reason: 'There is no other room to nest this one under yet.' };
+        }
+        return { ok: true };
+    },
+
+    convertToSubRoom(roomId, parentId) {
+        const room = this.getRoom(roomId);
+        const parent = this.getRoom(parentId);
+        if (!room || !parent) return false;
+        if (roomId === parentId) return false;              // no self-parenting
+        if (parent.parentRoomId) return false;              // parent must be top level
+        if (this.getSubRooms(roomId).length) return false;  // would nest too deep
+
+        // A sub-room belongs to whatever home its parent is in.
+        this.updateRoom(roomId, { parentRoomId: parentId, homeId: parent.homeId || null });
+        return true;
+    },
+
+    // The inverse, so converting is not a one-way trip.
+    convertToTopLevel(roomId) {
+        const room = this.getRoom(roomId);
+        if (!room || !room.parentRoomId) return false;
+        this.updateRoom(roomId, { parentRoomId: null });
+        return true;
     },
 
     // ---------- Items ----------

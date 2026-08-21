@@ -35,6 +35,149 @@ const Modal = {
         }, 250);
     },
 
+    // ===================== ADD HOME =====================
+    addHome() {
+        this.open(`
+            <div class="modal-header">
+                <button class="modal-cancel" onclick="Modal.close()">Cancel</button>
+                <h2>Create Home</h2>
+                <button class="modal-save" id="modal-save-btn" disabled>Save</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-section">
+                    <label>Home Name</label>
+                    <input type="text" id="home-name" placeholder="e.g. Main House" autofocus>
+                </div>
+                <div class="form-section">
+                    <label>Photo</label>
+                    <input type="file" id="home-photo" accept="image/*" class="file-input">
+                    <label for="home-photo" class="file-label">📷 Choose Photo</label>
+                    <div id="home-photo-preview" class="photo-preview hidden"></div>
+                </div>
+                <p class="form-note">Rooms can be assigned to a home when you create or edit them.</p>
+            </div>
+        `, () => App.render());
+
+        const nameInput = document.getElementById('home-name');
+        const saveBtn = document.getElementById('modal-save-btn');
+        nameInput.addEventListener('input', () => { saveBtn.disabled = !nameInput.value.trim(); });
+        document.getElementById('home-photo')
+            .addEventListener('change', (e) => this._handlePhotoPreview(e.target, 'home-photo-preview'));
+
+        saveBtn.addEventListener('click', () => {
+            Store.addHome({ name: nameInput.value.trim(), photo: this._getPhotoData('home-photo-preview') });
+            this.close();
+        });
+    },
+
+    // ===================== EDIT HOME =====================
+    editHome(homeId) {
+        const home = Store.getHome(homeId);
+        if (!home) return;
+        const rooms = Store.getRoomsForHome(homeId);
+
+        this.open(`
+            <div class="modal-header">
+                <button class="modal-cancel" onclick="Modal.close()">Cancel</button>
+                <h2>Edit Home</h2>
+                <button class="modal-save" id="modal-save-btn">Done</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-section">
+                    <label>Home Name</label>
+                    <input type="text" id="home-name" value="${this._esc(home.name)}">
+                </div>
+                <div class="form-section">
+                    <label>Photo</label>
+                    <input type="file" id="home-photo" accept="image/*" class="file-input">
+                    <label for="home-photo" class="file-label">📷 ${home.photo ? 'Change Photo' : 'Add Photo'}</label>
+                    <div id="home-photo-preview" class="photo-preview ${home.photo ? '' : 'hidden'}">${home.photo ? `<img src="${home.photo}"><button class="remove-photo" onclick="document.getElementById('home-photo-preview').innerHTML='';document.getElementById('home-photo-preview').classList.add('hidden')">Remove Photo</button>` : ''}</div>
+                </div>
+                <div class="form-section">
+                    <div class="form-info-row"><span>Rooms</span><span class="badge">${rooms.length}</span></div>
+                    ${rooms.length ? `<div class="picker-list">${rooms.map(r => `<div class="picker-item"><span>🏠 ${this._esc(r.name)}</span></div>`).join('')}</div>` : '<p class="form-note">No rooms in this home yet.</p>'}
+                </div>
+                <div class="form-section">
+                    <button class="btn-danger" id="delete-home-btn">Delete Home</button>
+                    ${rooms.length ? `<p class="danger-note">The ${rooms.length} room${rooms.length === 1 ? '' : 's'} in this home will be kept and moved to “No Home”.</p>` : ''}
+                </div>
+            </div>
+        `, () => App.render());
+
+        document.getElementById('home-photo')
+            .addEventListener('change', (e) => this._handlePhotoPreview(e.target, 'home-photo-preview'));
+
+        document.getElementById('modal-save-btn').addEventListener('click', () => {
+            Store.updateHome(homeId, {
+                name: document.getElementById('home-name').value.trim(),
+                photo: this._getPhotoData('home-photo-preview')
+            });
+            this.close();
+        });
+
+        document.getElementById('delete-home-btn').addEventListener('click', () => {
+            if (confirm(`Delete "${home.name}"? Its rooms will be kept and moved to “No Home”.`)) {
+                Store.deleteHome(homeId);
+                this.close();
+            }
+        });
+    },
+
+    // "Convert to Sub-Room" for a top-level room. When the conversion is not
+    // legal, say why rather than showing a button that does nothing.
+    _convertSection(roomId) {
+        const check = Store.canConvertToSubRoom(roomId);
+        if (!check.ok) {
+            return `<div class="form-section">
+                <label>Nesting</label>
+                <p class="form-note">${this._esc(check.reason)}</p>
+            </div>`;
+        }
+        const targets = Store.getConversionTargets(roomId);
+        return `<div class="form-section">
+            <label>Nesting</label>
+            <select id="convert-target">
+                ${targets.map(t => `<option value="${t.id}">${this._esc(t.name)}</option>`).join('')}
+            </select>
+            <button class="btn-secondary" id="convert-room-btn">↧ Convert to Sub-Room</button>
+            <p class="form-note">Nests this room, and everything in it, inside the room you pick.</p>
+        </div>`;
+    },
+
+    _doConvertToSubRoom(roomId) {
+        const room = Store.getRoom(roomId);
+        const parentId = document.getElementById('convert-target')?.value;
+        const parent = parentId ? Store.getRoom(parentId) : null;
+        if (!room || !parent) return;
+
+        const items = Store.getItemsForRoom(roomId).length;
+        const detail = items ? ` Its ${items} item${items === 1 ? '' : 's'} will move with it.` : '';
+        if (!confirm(`Make "${room.name}" a sub-room of "${parent.name}"?${detail}`)) return;
+
+        if (!Store.convertToSubRoom(roomId, parentId)) {
+            alert('That conversion is no longer possible — the rooms may have changed in another tab.');
+            return;
+        }
+        this.close();
+    },
+
+    // Reusable <select> of homes, used by both room modals.
+    _homeSelect(selectedId) {
+        const homes = Store.getHomes();
+        if (!homes.length) {
+            return `<p class="form-note">No homes yet. Create one from the + menu to group your rooms.</p>`;
+        }
+        return `<select id="room-home">
+            <option value="">No Home</option>
+            ${homes.map(h => `<option value="${h.id}" ${h.id === selectedId ? 'selected' : ''}>${this._esc(h.name)}</option>`).join('')}
+        </select>`;
+    },
+
+    _selectedHomeId() {
+        const el = document.getElementById('room-home');
+        return el ? (el.value || null) : null;
+    },
+
     // ===================== ADD ROOM =====================
     addRoom(parentRoom) {
         const title = parentRoom ? 'Create Sub-Room' : 'Create Room';
@@ -50,7 +193,9 @@ const Modal = {
                     <label>${parentRoom ? 'Sub-Room Name' : 'Room Name'}</label>
                     <input type="text" id="room-name" placeholder="${placeholder}" autofocus>
                 </div>
-                ${parentRoom ? `<div class="form-section"><label>Parent Room</label><div class="form-info">🏠 ${parentRoom.name}</div></div>` : ''}
+                ${parentRoom
+                    ? `<div class="form-section"><label>Parent Room</label><div class="form-info">🏠 ${this._esc(parentRoom.name)}</div></div>`
+                    : `<div class="form-section"><label>Home</label>${this._homeSelect(null)}</div>`}
                 <div class="form-section">
                     <label>Photo</label>
                     <input type="file" id="room-photo" accept="image/*" class="file-input">
@@ -74,7 +219,13 @@ const Modal = {
 
         saveBtn.addEventListener('click', () => {
             const photo = this._getPhotoData('room-photo-preview');
-            Store.addRoom({ name: nameInput.value.trim(), parentRoomId: parentRoom?.id || null, photo });
+            Store.addRoom({
+                name: nameInput.value.trim(),
+                parentRoomId: parentRoom?.id || null,
+                // A sub-room inherits its parent's home rather than asking again.
+                homeId: parentRoom ? (parentRoom.homeId || null) : this._selectedHomeId(),
+                photo
+            });
             this.close();
         });
     },
@@ -99,7 +250,15 @@ const Modal = {
                     <label>${isTopLevel ? 'Room Name' : 'Sub-Room Name'}</label>
                     <input type="text" id="room-name" value="${this._esc(room.name)}">
                 </div>
-                ${parentRoom ? `<div class="form-section"><label>Parent Room</label><div class="form-info">🏠 ${this._esc(parentRoom.name)}</div></div>` : ''}
+                ${parentRoom
+                    ? `<div class="form-section">
+                           <label>Parent Room</label>
+                           <div class="form-info">🏠 ${this._esc(parentRoom.name)}</div>
+                           <button class="btn-secondary" id="promote-room-btn">↥ Make a Top-Level Room</button>
+                           <p class="form-note">Moves this out of ${this._esc(parentRoom.name)} and back into the room list.</p>
+                       </div>`
+                    : `<div class="form-section"><label>Home</label>${this._homeSelect(room.homeId || null)}</div>
+                       ${this._convertSection(roomId)}`}
                 <div class="form-section">
                     <label>Photo</label>
                     <input type="file" id="room-photo" accept="image/*" class="file-input">
@@ -119,7 +278,20 @@ const Modal = {
 
         document.getElementById('modal-save-btn').addEventListener('click', () => {
             const photo = this._getPhotoData('room-photo-preview');
-            Store.updateRoom(roomId, { name: document.getElementById('room-name').value.trim(), photo });
+            const updates = { name: document.getElementById('room-name').value.trim(), photo };
+            // Only top-level rooms show the home picker; sub-rooms follow their parent.
+            if (document.getElementById('room-home')) updates.homeId = this._selectedHomeId();
+            Store.updateRoom(roomId, updates);
+            this.close();
+        });
+
+        const convertBtn = document.getElementById('convert-room-btn');
+        if (convertBtn) convertBtn.addEventListener('click', () => this._doConvertToSubRoom(roomId));
+
+        const promoteBtn = document.getElementById('promote-room-btn');
+        if (promoteBtn) promoteBtn.addEventListener('click', () => {
+            if (!confirm(`Move "${room.name}" out of "${parentRoom?.name}" and make it a top-level room?`)) return;
+            Store.convertToTopLevel(roomId);
             this.close();
         });
 

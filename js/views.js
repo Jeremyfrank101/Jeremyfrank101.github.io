@@ -25,6 +25,24 @@ const Views = {
             </div>`;
         }
 
+        // Homes section
+        const homes = Store.getHomes();
+        if (homes.length) {
+            html += `<div class="section">
+                <div class="section-header"><span>Homes</span><span class="badge">${homes.length}</span></div>
+                <div class="section-body">${homes.map(h => {
+                    const n = Store.getRoomsForHome(h.id).length;
+                    return `<div class="list-row" onclick="Modal.editHome('${h.id}')">
+                        <div class="row-thumb">${h.photo ? `<img src="${h.photo}" style="width:100%;height:100%;object-fit:cover">` : '<span>🏡</span>'}</div>
+                        <div class="row-info">
+                            <div class="row-title">${this._esc(h.name)}</div>
+                            <div class="row-subtitle"><span>${n} room${n !== 1 ? 's' : ''}</span></div>
+                        </div>
+                    </div>`;
+                }).join('')}</div>
+            </div>`;
+        }
+
         // Rooms section
         if (rooms.length) {
             html += `<div class="section">
@@ -68,11 +86,17 @@ const Views = {
     },
 
     renderByRoom() {
-        const topRooms = Store.getTopLevelRooms();
+        const homes = Store.getHomes();
         const unassigned = Store.getItems().filter(i => !i.roomId);
         let html = '';
 
-        topRooms.forEach(room => {
+        // Group rooms under their home. Rooms with no home come last under
+        // "No Home", so nothing can go missing just because it is unassigned.
+        const groups = homes.map(h => ({ home: h, rooms: Store.getRoomsForHome(h.id) }));
+        const homeless = Store.getRoomsForHome(null);
+        if (homeless.length) groups.push({ home: null, rooms: homeless });
+
+        const renderRoom = room => {
             const roomItems = Store.getItemsForRoom(room.id);
             const subRooms = Store.getSubRooms(room.id);
 
@@ -104,6 +128,23 @@ const Views = {
                     ${!roomItems.length && !subRooms.length ? '<div class="empty-note">No items</div>' : ''}
                 </div>
             </div>`;
+        };
+
+        groups.forEach(({ home, rooms }) => {
+            // Only label the grouping once there is a home to distinguish it
+            // from, so a user who never creates one sees the original flat list.
+            if (homes.length) {
+                html += `<div class="home-group-header" ${home ? `onclick="Modal.editHome('${home.id}')"` : ''}>
+                    ${home && home.photo ? `<img src="${home.photo}" class="home-photo">` : `<span class="home-icon">${home ? '🏡' : '📦'}</span>`}
+                    <span class="home-name">${home ? this._esc(home.name) : 'No Home'}</span>
+                    <span class="badge">${rooms.length}</span>
+                    ${home ? '<span class="section-edit">✏️</span>' : ''}
+                </div>`;
+            }
+            if (!rooms.length) {
+                html += '<div class="section"><div class="section-body"><div class="empty-note">No rooms in this home yet.</div></div></div>';
+            }
+            rooms.forEach(renderRoom);
         });
 
         if (unassigned.length) {
