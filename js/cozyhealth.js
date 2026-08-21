@@ -40,6 +40,29 @@ const CozyHealth = {
     // Rough daily targets, used only to draw progress — not medical advice.
     TARGETS: { calories: 2000, protein_grams: 90, vegetables_servings: 5, fiber_grams: 30 },
 
+    // Micronutrients, with the FDA adult Daily Value used as the reference so
+    // the bars mean something. `limit: true` marks the ones you want to stay
+    // under rather than reach. Omega-3 has no official DV; 500mg combined
+    // EPA+DHA is the usual dietary recommendation. Not medical advice.
+    MICROS: [
+        { keys: ['calcium_mg'],    label: 'Calcium',   unit: 'mg', dv: 1300 },
+        { keys: ['iron_mg'],       label: 'Iron',      unit: 'mg', dv: 18 },
+        { keys: ['potassium_mg'],  label: 'Potassium', unit: 'mg', dv: 4700 },
+        { keys: ['vitamin_a_mcg'], label: 'Vitamin A', unit: 'µg', dv: 900 },
+        { keys: ['vitamin_c_mg'],  label: 'Vitamin C', unit: 'mg', dv: 90 },
+        { keys: ['vitamin_d_mcg'], label: 'Vitamin D', unit: 'µg', dv: 20 },
+        { keys: ['folate_mcg'],    label: 'Folate',    unit: 'µg', dv: 400 },
+        { keys: ['choline_mg'],    label: 'Choline',   unit: 'mg', dv: 550 },
+        { keys: ['omega3_dha_mg', 'omega3_epa_mg'], label: 'Omega-3', unit: 'mg', dv: 500 },
+        { keys: ['sodium_mg'],     label: 'Sodium',    unit: 'mg', dv: 2300, limit: true },
+        { keys: ['sugar_grams'],   label: 'Sugar',     unit: 'g',  dv: 50,   limit: true }
+    ],
+
+    // Every nutrient column an entry can carry, so totals() can sum them all.
+    MICRO_KEYS: ['sodium_mg', 'sugar_grams', 'calcium_mg', 'iron_mg', 'potassium_mg',
+                 'vitamin_a_mcg', 'vitamin_c_mg', 'vitamin_d_mcg', 'folate_mcg',
+                 'choline_mg', 'omega3_dha_mg', 'omega3_epa_mg'],
+
     mounted: false,
     tab: 'today',
     viewing: null,      // null = your own log; otherwise a user id shared with you
@@ -236,10 +259,56 @@ const CozyHealth = {
     totals(meals) {
         const t = { calories: 0, protein_grams: 0, carbs_grams: 0, fat_grams: 0, fiber_grams: 0 };
         this.SERVINGS.forEach(s => { t[s.key] = 0; });
+        this.MICRO_KEYS.forEach(k => { t[k] = 0; });
         for (const m of meals) {
             for (const k of Object.keys(t)) t[k] += Number(m[k]) || 0;
         }
         return t;
+    },
+
+    // ---------- micronutrients ----------
+
+    // A meal contributes no micros at all when it was typed by hand — the
+    // manual form only asks for calories and macros — or when it was logged
+    // from the library before entries started carrying micros. Worth saying
+    // out loud, because otherwise the day just looks deficient.
+    _microGaps(meals) {
+        return meals.filter(m => !this.MICRO_KEYS.some(k => Number(m[k]) > 0));
+    },
+
+    _microPanel(meals, t) {
+        if (!meals.length) return '';
+        const rows = this.MICROS.map(mi => {
+            const total = mi.keys.reduce((n, k) => n + (Number(t[k]) || 0), 0);
+            const pct = mi.dv ? (total / mi.dv) * 100 : 0;
+            return { ...mi, total, pct };
+        });
+        if (!rows.some(r => r.total > 0)) return '';
+
+        const gaps = this._microGaps(meals);
+        return `
+        <div class="chx-card">
+            <h3>Micronutrients today</h3>
+            <div class="chx-micros">
+                ${rows.map(r => {
+                    const over = r.limit && r.pct > 100;
+                    const cls = over ? 'over' : r.limit ? 'limit' : r.pct >= 100 ? 'met' : '';
+                    return `<div class="chx-micro ${cls}">
+                        <span class="chx-micro-name">${r.label}</span>
+                        <span class="chx-micro-track">
+                            <span class="chx-micro-fill" style="width:${Math.min(100, r.pct)}%"></span>
+                        </span>
+                        <span class="chx-micro-val">${this.fmt(r.total, r.total < 10 ? 1 : 0)}<em>${r.unit}</em></span>
+                        <span class="chx-micro-pct">${Math.round(r.pct)}%</span>
+                    </div>`;
+                }).join('')}
+            </div>
+            <p class="chx-dim">Against adult Daily Values. Sodium and sugar are ceilings, not targets.</p>
+            ${gaps.length ? `<p class="chx-dim">${gaps.length} of ${meals.length} ${
+                meals.length === 1 ? 'entry' : 'entries'} ${
+                gaps.length === 1 ? 'has' : 'have'} no micronutrient data — hand-typed meals record
+                only calories and macros, so the totals above are a floor.</p>` : ''}
+        </div>`;
     },
 
     crumpets() { return this.data.profile?.cozy_crumpets || 0; },
@@ -652,7 +721,9 @@ const CozyHealth = {
                     </div>`).join('') || '<p class="chx-dim">No servings logged today.</p>'}
             </div>
             ${meals.length ? meals.map(m => this._mealRow(m, true)).join('') : '<p class="chx-dim">No meals yet today.</p>'}
-        </div>`;
+        </div>
+
+        ${this._microPanel(meals, t)}`;
     },
 
     // When viewing a partner, show their intake without any logging controls.
@@ -669,7 +740,9 @@ const CozyHealth = {
                 <span>Fibre ${this.fmt(t.fiber_grams)}g</span>
             </div>
             ${meals.length ? meals.map(m => this._mealRow(m)).join('') : '<p class="chx-dim">Nothing logged today.</p>'}
-        </div>`;
+        </div>
+
+        ${this._microPanel(meals, t)}`;
     },
 
     // How much of it was logged, shown only when it is not one plain serving.

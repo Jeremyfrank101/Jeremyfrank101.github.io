@@ -1668,3 +1668,40 @@
     z-index: 60; pointer-events: none;
 }
 .ckb-toast.hidden { display: none; }
+
+/* CozyHealth — today's micronutrients, each against its Daily Value. */
+.chx-micros { display: flex; flex-direction: column; gap: 7px; margin-bottom: 10px; }
+.chx-micro { display: flex; align-items: center; gap: 10px; font-size: 0.86rem; }
+.chx-micro-name { flex: 0 0 84px; }
+.chx-micro-track {
+    flex: 1 1 auto;
+    height: 7px;
+    border-radius: 4px;
+    background: rgba(0,0,0,0.09);
+    overflow: hidden;
+}
+.chx-micro-fill {
+    display: block;
+    height: 100%;
+    border-radius: 4px;
+    background: var(--accent);
+    transition: width 0.25s ease;
+}
+/* value and percent get their own fixed columns, so a four-digit potassium
+   figure cannot push the percentage onto a second line and break the grid */
+.chx-micro-val { flex: 0 0 78px; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chx-micro-val em { font-style: normal; color: var(--text-dim); font-size: 0.78rem; margin-left: 1px; }
+.chx-micro-pct { flex: 0 0 44px; text-align: right; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+
+/* met the target */
+.chx-micro.met .chx-micro-fill { background: rgb(var(--completed-rgb)); }
+/* a ceiling rather than a goal */
+.chx-micro.limit .chx-micro-fill { background: rgba(var(--danger-rgb), 0.45); }
+.chx-micro.over .chx-micro-fill { background: rgb(var(--danger-rgb)); }
+.chx-micro.over .chx-micro-pct { color: rgb(var(--danger-rgb)); font-weight: 600; }
+
+@media (max-width: 420px) {
+    .chx-micro-name { flex: 0 0 72px; font-size: 0.82rem; }
+    .chx-micro-val { flex: 0 0 70px; font-size: 0.82rem; }
+    .chx-micro-pct { flex: 0 0 38px; font-size: 0.82rem; }
+}
