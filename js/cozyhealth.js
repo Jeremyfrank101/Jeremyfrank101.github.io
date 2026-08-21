@@ -91,7 +91,8 @@ const CozyHealth = {
     },
     people: {},         // user id -> { email, username }
     shares: [],
-    data: { meals: [], workouts: [], mind: [], meditations: [], measurements: [], library: [], profile: null },
+    data: { meals: [], workouts: [], mind: [], meditations: [], measurements: [], library: [],
+            recipes: [], recipeNutrition: [], profile: null },
 
     // ---------- lifecycle ----------
 
@@ -165,6 +166,7 @@ const CozyHealth = {
             if (err) throw err.error;
 
             this.data = {
+                recipes: this.data.recipes, recipeNutrition: this.data.recipeNutrition,
                 meals: meals.data || [],
                 workouts: workouts.data || [],
                 mind: mind.data || [],
@@ -173,6 +175,11 @@ const CozyHealth = {
                 library: library.data || [],
                 profile: profile.data || null
             };
+
+            // Recipes come from the cookbook's own schema, and the nutrition
+            // someone worked out for them from ours. Only on your own log —
+            // a partner's cookbook is not yours to read.
+            if (this.isOwnLog()) await this._loadRecipes();
 
             if (!this.data.profile && this.isOwnLog()) await this._ensureProfile();
             this._error = null;
@@ -476,7 +483,7 @@ const CozyHealth = {
             <div class="chx-card chx-stat">
                 <span class="chx-stat-ico">🍽️</span>
                 <span class="chx-stat-num">${meals.length}</span>
-                <span class="chx-stat-lbl">meal${meals.length === 1 ? '' : 's'} logged</span>
+                <span class="chx-stat-lbl">food${meals.length === 1 ? '' : 's'} logged</span>
             </div>
             <div class="chx-card chx-stat">
                 <span class="chx-stat-ico">🏃</span>
@@ -498,11 +505,11 @@ const CozyHealth = {
         ${this.isOwnLog() ? this._shareCard() : ''}
 
         ${meals.length ? `<div class="chx-card">
-            <h3>Today's meals</h3>
+            <h3>Today's foods</h3>
             ${meals.map(m => this._mealRow(m)).join('')}
         </div>` : `<div class="chx-card chx-empty-card">
             <p>Nothing logged yet today.</p>
-            <button class="chx-btn" data-go="food">Log a meal</button>
+            <button class="chx-btn" data-go="food">Log a food</button>
         </div>`}`;
     },
 
@@ -644,6 +651,355 @@ const CozyHealth = {
                          : `Tap a food to log ${this.fmt(v)}% of a serving.`;
     },
 
+    async _loadRecipes() {
+        try {
+            const [recipes, nutrition] = await Promise.all([
+                Auth.client.schema('CozyCookBookSchema').from('recipes')
+                    .select('id,title,ingredients,meal,folder_id,user_id').order('title'),
+                this.db('recipe_nutrition').select('*').eq('owner_id', this.uid())
+            ]);
+            this.data.recipes = recipes.data || [];
+            this.data.recipeNutrition = nutrition.data || [];
+        } catch (e) {
+            // A missing cookbook is not a reason to fail the whole health load.
+            console.warn('[CozyHealth] could not load recipes', e);
+        }
+    },
+
+    // ---------- recipes from CozyCookBook ----------
+    //
+    // A recipe is a list of free-text ingredients and no nutrition whatsoever,
+    // so there is nothing to log until someone works out what is in it. Each
+    // ingredient line is parsed for a quantity and matched against the food
+    // library; whatever matches is summed into a whole-recipe total.
+    //
+    // The estimate is always shown with its working — which lines matched and
+    // which did not — because a number assembled this way is a starting point,
+    // not a fact, and the totals stay editable.
+
+    MASS_UNITS: {
+        g: 1, gm: 1, gr: 1, gram: 1, grams: 1, gramme: 1, grammes: 1,
+        kg: 1000, kilo: 1000, kilos: 1000, kilogram: 1000, kilograms: 1000,
+        oz: 28.3495, ounce: 28.3495, ounces: 28.3495,
+        lb: 453.592, lbs: 453.592, pound: 453.592, pounds: 453.592,
+        ml: 1, millilitre: 1, milliliter: 1, l: 1000, litre: 1000, liter: 1000
+    },
+
+    // Words that describe rather than identify, and so should not count
+    // against a match.
+    STOP_WORDS: new Set(['of','the','a','an','or','and','to','taste','fresh','freshly',
+        'chopped','diced','sliced','minced','ground','grated','shredded','crushed',
+        'large','small','medium','extra','cooked','raw','whole','ripe','optional',
+        'peeled','drained','rinsed','plus','more','for','into',
+        'roughly','finely','thinly','about','approx','packed','heaped','level','good',
+        'quality','best','room','temperature','warm','cold','hot']),
+    // Deliberately NOT stop words: canned, smoked, dried, frozen, boneless,
+    // skinless. They identify a different food rather than describe one, and
+    // dropping them collapsed "Canned Salmon, skinless boneless" to plain
+    // "salmon", where it tied with the fresh fillet and won on sort order.
+
+    WORD_NUMBERS: { one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8,
+                    nine:9, ten:10, half:0.5, quarter:0.25, dozen:12 },
+
+    // "2 cups bomba rice", "Vital Wheat Gluten 300g", "One block of Tofu"
+    _parseIngredient(raw) {
+        let s = String(raw || '').toLowerCase().trim();
+        let qty = null, unit = null;
+
+        // a trailing or embedded mass, e.g. "vital wheat gluten 300g"
+        const mass = s.match(/(\d*\.?\d+)\s*(kg|kilograms?|kilos?|g|gm|gr|grams?|grammes?|oz|ounces?|lbs?|pounds?|ml|millilitres?|milliliters?|l|litres?|liters?)\b/);
+
+        // a leading quantity: "1 1/2", "1/2", "2", "0.5", "two"
+        const lead = s.match(/^(\d+\s+\d+\/\d+|\d+\/\d+|\d*\.?\d+)\s*/);
+        if (lead) {
+            const t = lead[1].trim();
+            if (t.includes('/')) {
+                const parts = t.split(/\s+/);
+                const frac = parts.pop().split('/');
+                qty = (parts.length ? Number(parts[0]) : 0) + Number(frac[0]) / Number(frac[1]);
+            } else qty = Number(t);
+            s = s.slice(lead[0].length);
+        } else {
+            const w = s.match(/^([a-z]+)\s+/);
+            if (w && this.WORD_NUMBERS[w[1]] != null) { qty = this.WORD_NUMBERS[w[1]]; s = s.slice(w[0].length); }
+        }
+
+        // a unit immediately after the quantity
+        const u = s.match(/^([a-z]+)\.?\s+/);
+        if (u) {
+            const tok = u[1];
+            if (this.MASS_UNITS[tok] || this._countUnit(tok)) { unit = tok; s = s.slice(u[0].length); }
+        }
+
+        // an embedded mass wins: it is unambiguous
+        if (mass && !this.MASS_UNITS[unit]) {
+            qty = Number(mass[1]); unit = mass[2];
+            s = s.replace(mass[0], ' ');
+        }
+
+        s = s.replace(/\([^)]*\)/g, ' ')     // "(or Arborio rice)"
+             .replace(/[,;].*$/, ' ')        // ", finely chopped"
+             .replace(/[^a-z0-9\s-]/g, ' ')
+             .replace(/\s+/g, ' ').trim();
+
+        return { qty, unit, text: s, raw };
+    },
+
+    _countUnit(tok) {
+        return /^(cups?|tbsps?|tablespoons?|tsps?|teaspoons?|cloves?|slices?|cans?|blocks?|pieces?|scoops?|sticks?|bunch(es)?|handfuls?|packs?|packets?|tins?|fillets?|bars?|eggs?)$/.test(tok);
+    },
+
+    _singular(u) { return String(u || '').replace(/(es|s)$/, ''); },
+
+    // A crude stem, so "eggs" matches "Egg" and "seeds" matches "Seed".
+    _stem(t) {
+        return t.length > 3 && t.endsWith('s') && !t.endsWith('ss') ? t.slice(0, -1) : t;
+    },
+
+    _tokens(s) {
+        return String(s || '').toLowerCase()
+            .replace(/\([^)]*\)/g, ' ')
+            .replace(/[^a-z0-9\s-]/g, ' ')
+            .split(/\s+/)
+            .filter(t => t && t.length > 2 && !this.STOP_WORDS.has(t))
+            .map(t => this._stem(t));
+    },
+
+    // The portion a library row names: "Brown Rice (1 cup cooked)" -> 1 cup.
+    _libPortion(name) {
+        const m = String(name || '').match(/\(([\d.\/]+)\s*([a-z]+)/i);
+        if (!m) return null;
+        const q = m[1].includes('/')
+            ? Number(m[1].split('/')[0]) / Number(m[1].split('/')[1])
+            : Number(m[1]);
+        return isFinite(q) && q > 0 ? { qty: q, unit: m[2].toLowerCase() } : null;
+    },
+
+    // Best library row for an ingredient, or null.
+    _matchFood(text) {
+        const want = this._tokens(text);
+        if (!want.length) return null;
+        let best = null, bestScore = 0;
+        for (const g of this.data.library) {
+            const have = this._tokens(g.name);
+            if (!have.length) continue;
+            let hit = 0;
+            for (const t of have) if (want.includes(t)) hit++;
+            if (!hit) continue;
+            // reward covering the library name, and covering the ingredient
+            // Covering what the user actually wrote matters more than
+            // accounting for every word of the library name. Weighted the
+            // other way round, "canned salmon" lost to plain "Salmon" purely
+            // because that name is shorter.
+            const recall = hit / want.length, precision = hit / have.length;
+            const score = recall * 0.7 + precision * 0.3;
+            // On a tie prefer the plainer entry: a shorter name carries fewer
+            // qualifiers, so it is the more general food of the two.
+            if (score > bestScore || (score === bestScore && best && g.name.length < best.name.length)) {
+                bestScore = score; best = g;
+            }
+        }
+        return bestScore >= 0.5 ? best : null;
+    },
+
+    // How many library servings an ingredient line represents.
+    _servingsOf(ing, g) {
+        const portion = this._libPortion(g.name);
+        const massPer = this.MASS_UNITS[ing.unit];
+        const qty = ing.qty == null ? 1 : ing.qty;
+
+        if (massPer && g.serving_grams) {
+            return { factor: (qty * massPer) / g.serving_grams, sure: true };
+        }
+        if (ing.unit && portion && this._singular(ing.unit) === this._singular(portion.unit)) {
+            return { factor: qty / portion.qty, sure: true };
+        }
+        if (!ing.unit) {
+            // a bare count against a countable portion: "2 bananas" vs "(1 medium)"
+            return { factor: qty / (portion ? portion.qty : 1), sure: !!portion };
+        }
+        // units we cannot reconcile — take it as that many servings and say so
+        return { factor: qty, sure: false };
+    },
+
+    // Whole-recipe totals, with the per-line working kept for display.
+    estimateRecipe(recipe) {
+        const lines = (recipe.ingredients || []).map(x => {
+            const ing = this._parseIngredient(x.name);
+            const food = this._matchFood(ing.text);
+            if (!food) return { ing, food: null };
+            const { factor, sure } = this._servingsOf(ing, food);
+            return { ing, food, factor, sure };
+        });
+
+        const totals = {};
+        for (const to of Object.values(this.LIB_TO_ENTRY)) totals[to] = 0;
+        for (const l of lines) {
+            if (!l.food) continue;
+            const scaled = this._scaled(l.food, this.LIB_TO_ENTRY, l.factor);
+            for (const k of Object.keys(scaled)) totals[k] += scaled[k];
+        }
+        for (const k of Object.keys(totals)) totals[k] = Math.round(totals[k] * 100) / 100;
+
+        return {
+            totals,
+            lines,
+            matched: lines.filter(l => l.food).length,
+            count: lines.length
+        };
+    },
+
+    // ---------- recipe UI ----------
+
+    openRecipe: null,
+
+    _recipeCard() {
+        const rs = this.data.recipes;
+        if (!rs.length) return '';
+        if (this.openRecipe) return this._recipePanel(this.openRecipe);
+
+        return `<div class="chx-card">
+            <h3>From your cookbook</h3>
+            <div class="chx-chips">
+                ${rs.map(r => {
+                    const n = this.nutritionFor(r.id);
+                    const per = n ? Math.round((n.calories || 0) / (Number(n.servings) || 1)) : null;
+                    return `<button class="chx-chip ${n ? 'chx-again' : ''}" data-recipe="${r.id}">
+                        ${this.esc(r.title)}
+                        <small>${n ? `${this.fmt(per)} kcal a serving` : 'work out nutrition'}</small>
+                    </button>`;
+                }).join('')}
+            </div>
+        </div>`;
+    },
+
+    _recipePanel(id) {
+        const r = this.data.recipes.find(x => x.id === id);
+        if (!r) { this.openRecipe = null; return ''; }
+        const n = this.nutritionFor(id);
+        const est = this.estimateRecipe(r);
+        const servings = n ? Number(n.servings) : 1;
+        const cur = n || est.totals;
+        const perServing = k => (Number(cur[k]) || 0) / (servings || 1);
+
+        return `<div class="chx-card chx-recipe">
+            <div class="chx-recipe-head">
+                <h3>${this.esc(r.title)}</h3>
+                <button class="chx-btn chx-ghost" data-close-recipe aria-label="Back to the food list">Close</button>
+            </div>
+
+            ${!n ? `<p class="chx-dim">No nutrition saved for this recipe yet. Here is an estimate
+                built from its ingredients — check it, then save.</p>` : ''}
+
+            <div class="chx-recipe-lines">
+                ${est.lines.map(l => `<div class="chx-rline ${l.food ? '' : 'miss'}">
+                    <span class="chx-rline-name">${this.esc(l.ing.raw)}</span>
+                    <span class="chx-rline-match">${l.food
+                        ? `${this.esc(l.food.name)}${l.sure ? '' : ' <em>≈</em>'}`
+                        : 'no match'}</span>
+                    <span class="chx-rline-kcal">${l.food
+                        ? this.fmt((l.food.calories || 0) * l.factor) + ' kcal' : '—'}</span>
+                </div>`).join('')}
+            </div>
+            <p class="chx-dim">${est.matched} of ${est.count} ingredients matched${
+                est.matched < est.count ? ' — the rest are not counted, so edit the totals below if it matters' : ''}.
+                <em>≈</em> marks a quantity we could not convert exactly.</p>
+
+            <div class="chx-recipe-edit">
+                <label>Makes <input type="number" id="chx-r-servings" min="0.5" step="0.5" value="${servings}"> servings</label>
+                <label>Whole recipe <input type="number" id="chx-r-cal" min="0" step="1" value="${Math.round(Number(cur.calories) || 0)}"> kcal</label>
+            </div>
+            <div class="chx-row">
+                <input type="number" id="chx-r-p" min="0" step="0.1" placeholder="protein g" value="${this.fmt(cur.protein_grams, 1)}" aria-label="Protein grams for the whole recipe">
+                <input type="number" id="chx-r-c" min="0" step="0.1" placeholder="carbs g" value="${this.fmt(cur.carbs_grams, 1)}" aria-label="Carb grams for the whole recipe">
+                <input type="number" id="chx-r-f" min="0" step="0.1" placeholder="fat g" value="${this.fmt(cur.fat_grams, 1)}" aria-label="Fat grams for the whole recipe">
+            </div>
+            <p class="chx-dim">Protein / carbs / fat for the whole recipe.
+                One serving is currently ${this.fmt(perServing('calories'))} kcal.</p>
+            <button class="chx-btn chx-primary" id="chx-r-save">${n ? 'Update nutrition' : 'Save nutrition'}</button>
+
+            ${n ? `<div class="chx-recipe-log">
+                <h3>Log some of it</h3>
+                <div class="chx-amount">
+                    <input type="number" id="chx-r-amt" value="100" min="0" step="any" aria-label="Amount">
+                    <div class="chx-units">
+                        <button class="chx-unit active" data-runit="serving">% of a serving</button>
+                        <button class="chx-unit" data-runit="recipe">% of the recipe</button>
+                    </div>
+                </div>
+                <p class="chx-dim" id="chx-r-preview"></p>
+                <button class="chx-btn chx-primary" id="chx-r-log">Log it</button>
+            </div>` : ''}
+        </div>`;
+    },
+
+    _recipePreview() {
+        const el = document.getElementById('chx-r-preview');
+        if (!el || !this.openRecipe) return;
+        const n = this.nutritionFor(this.openRecipe);
+        if (!n) return;
+        const v = Number(document.getElementById('chx-r-amt').value);
+        const unit = this.recipeUnit || 'serving';
+        const servings = Number(n.servings) || 1;
+        if (!isFinite(v) || v <= 0) { el.textContent = 'Enter an amount above zero.'; return; }
+        const factor = unit === 'recipe' ? v / 100 : (v / 100) / servings;
+        el.textContent = `That is ${this.fmt((n.calories || 0) * factor)} kcal, `
+            + `${this.fmt((n.protein_grams || 0) * factor, 1)}g protein.`;
+    },
+
+    nutritionFor(recipeId) {
+        return this.data.recipeNutrition.find(n => n.recipe_id === recipeId) || null;
+    },
+
+    async saveRecipeNutrition(recipeId, patch) {
+        const existing = this.nutritionFor(recipeId);
+        const row = {
+            ...(existing || {}),
+            recipe_id: recipeId,
+            owner_id: this.uid(),
+            ...patch,
+            updated_at: new Date().toISOString()
+        };
+        if (existing) Object.assign(existing, row);
+        else this.data.recipeNutrition.push(row);
+        // upsert, because the row may or may not exist and the queue cannot ask
+        Sync.enqueueWrite({
+            schema: this.SCHEMA, table: 'recipe_nutrition', action: 'upsert', payload: row
+        });
+        this.render();
+    },
+
+    // Log a portion of a recipe. `unit` is 'serving' (a share of one portion)
+    // or 'recipe' (a share of the whole thing).
+    async logRecipe(recipeId, value, unit) {
+        const r = this.data.recipes.find(x => x.id === recipeId);
+        const n = this.nutritionFor(recipeId);
+        if (!r || !n) return;
+        const v = Number(value);
+        if (!isFinite(v) || v <= 0) { this._toast('Enter an amount above zero.'); return; }
+
+        const servings = Number(n.servings) || 1;
+        // fraction of the WHOLE recipe, which is what the totals describe
+        const factor = unit === 'recipe' ? v / 100 : (v / 100) / servings;
+        const label = unit === 'recipe'
+            ? `${this.fmt(v)}% of the recipe`
+            : `${this.fmt(v)}% of a serving`;
+
+        const ident = {};
+        for (const k of Object.values(this.LIB_TO_ENTRY)) ident[k] = k;
+
+        await this._insert('meal_entries', {
+            ...this._base(),
+            name: r.title,
+            meal_type: r.meal || this.timeSlot(),
+            date: new Date().toISOString(),
+            recipe_id: recipeId,
+            quantity: unit === 'recipe' ? factor * servings : v / 100,
+            quantity_unit: 'serving',
+            ...this._scaled(n, ident, factor)
+        }, 'meals', `${r.title} — ${label}`, 2);
+    },
+
     // ---------- Food ----------
 
     renderFood() {
@@ -686,8 +1042,10 @@ const CozyHealth = {
             </div>
         </div>
 
+        ${this._recipeCard()}
+
         <div class="chx-card">
-            <h3>Log a meal</h3>
+            <h3>Log a food</h3>
             <input type="text" id="chx-meal-name" placeholder="What did you eat?">
             <div class="chx-row">
                 <select id="chx-meal-type">${this.MEAL_TYPES.map(x => `<option>${x}</option>`).join('')}</select>
@@ -708,7 +1066,7 @@ const CozyHealth = {
                         </label>`).join('')}
                 </div>
             </details>
-            <button class="chx-btn chx-primary" id="chx-add-meal">Add meal</button>
+            <button class="chx-btn chx-primary" id="chx-add-meal">Add food</button>
         </div>
 
         <div class="chx-card">
@@ -726,7 +1084,7 @@ const CozyHealth = {
                         <strong>${this.fmt(t[s.key], 1)}</strong>
                     </div>`).join('') || '<p class="chx-dim">No servings logged today.</p>'}
             </div>
-            ${meals.length ? meals.map(m => this._mealRow(m, true)).join('') : '<p class="chx-dim">No meals yet today.</p>'}
+            ${meals.length ? meals.map(m => this._mealRow(m, true)).join('') : '<p class="chx-dim">Nothing logged yet today.</p>'}
         </div>
 
         ${this._microPanel(meals, t)}`;
@@ -971,6 +1329,39 @@ const CozyHealth = {
                 this.render();
             }));
 
+        // recipes
+        this.container.querySelectorAll('[data-recipe]').forEach(b =>
+            b.addEventListener('click', () => { this.openRecipe = b.dataset.recipe; this.render(); }));
+        this.container.querySelectorAll('[data-close-recipe]').forEach(b =>
+            b.addEventListener('click', () => { this.openRecipe = null; this.render(); }));
+        on('chx-r-save', 'click', () => {
+            const num = id => Number(document.getElementById(id).value) || 0;
+            const est = this.estimateRecipe(this.data.recipes.find(r => r.id === this.openRecipe));
+            const cal = num('chx-r-cal'), p = num('chx-r-p'), c = num('chx-r-c'), f = num('chx-r-f');
+            // Keep the estimate's micros, but honour any macro the user changed.
+            const edited = cal !== Math.round(est.totals.calories)
+                        || p !== Number(this.fmt(est.totals.protein_grams, 1));
+            this.saveRecipeNutrition(this.openRecipe, {
+                ...est.totals,
+                servings: num('chx-r-servings') || 1,
+                calories: cal, protein_grams: p, carbs_grams: c, fat_grams: f,
+                source: edited ? 'manual' : 'estimated',
+                matched_count: est.matched, ingredient_count: est.count
+            });
+            this._toast('Nutrition saved');
+        });
+        this.container.querySelectorAll('[data-runit]').forEach(b =>
+            b.addEventListener('click', () => {
+                this.recipeUnit = b.dataset.runit;
+                this.container.querySelectorAll('[data-runit]').forEach(x =>
+                    x.classList.toggle('active', x === b));
+                this._recipePreview();
+            }));
+        on('chx-r-amt', 'input', () => this._recipePreview());
+        on('chx-r-log', 'click', () => this.logRecipe(this.openRecipe,
+            document.getElementById('chx-r-amt').value, this.recipeUnit || 'serving'));
+        this._recipePreview();
+
         this.container.querySelectorAll('[data-quick]').forEach(b =>
             b.addEventListener('click', () => this.quickAdd(b.dataset.quick)));
         this.container.querySelectorAll('[data-again]').forEach(b =>
@@ -1115,7 +1506,7 @@ const CozyHealth = {
 
     async addMeal() {
         const name = document.getElementById('chx-meal-name').value.trim();
-        if (!name) { this._toast('Give the meal a name first.'); return; }
+        if (!name) { this._toast('Give the food a name first.'); return; }
         const num = id => Number(document.getElementById(id).value) || 0;
         const row = {
             ...this._base(),
@@ -1130,7 +1521,7 @@ const CozyHealth = {
         document.querySelectorAll('[data-serving]').forEach(el => {
             row[el.dataset.serving] = Number(el.value) || 0;
         });
-        await this._insert('meal_entries', row, 'meals', 'Meal logged', 2);
+        await this._insert('meal_entries', row, 'meals', 'Food logged', 2);
     },
 
     async addWorkout() {

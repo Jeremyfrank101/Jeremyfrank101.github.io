@@ -157,3 +157,71 @@ comment on column cozyhealth.generic_meals.serving_grams is
     'Weight in grams of the portion named in `name`. NULL where a weight is not meaningful.';
 comment on column cozyhealth.meal_entries.quantity is
     'Amount logged, in the unit given by quantity_unit. NULL on entries predating portion support.';
+
+
+-- ---------------------------------------------------------------------------
+-- Logging a CozyCookBook recipe as food.
+--
+-- Recipes carry ingredients as free text and no nutrition at all, so this is
+-- where the numbers live. It sits in cozyhealth rather than on the recipes
+-- table because the cookbook is shared and written by the iOS app, and one
+-- person's estimate of a shared recipe is their own business — hence the
+-- composite key, so two people sharing a cookbook each keep their own.
+--
+-- Totals are for the WHOLE recipe. Per-serving is derived by dividing by
+-- `servings`, which keeps "a third of the tray" and "one portion" as the same
+-- arithmetic on one stored number.
+-- ---------------------------------------------------------------------------
+
+create table if not exists cozyhealth.recipe_nutrition (
+    recipe_id   uuid not null,
+    owner_id    uuid not null default auth.uid(),
+    servings    numeric not null default 1 check (servings > 0),
+    source           text not null default 'estimated'
+                     check (source in ('estimated', 'manual')),
+    matched_count    integer not null default 0,
+    ingredient_count integer not null default 0,
+    calories double precision default 0,
+    protein_grams double precision default 0,
+    carbs_grams double precision default 0,
+    fat_grams double precision default 0,
+    fiber_grams double precision default 0,
+    sugar_grams double precision default 0,
+    sodium_mg double precision default 0,
+    vitamin_a_mcg double precision default 0,
+    vitamin_c_mg double precision default 0,
+    vitamin_d_mcg double precision default 0,
+    calcium_mg double precision default 0,
+    iron_mg double precision default 0,
+    potassium_mg double precision default 0,
+    folate_mcg double precision default 0,
+    choline_mg double precision default 0,
+    omega3_dha_mg double precision default 0,
+    omega3_epa_mg double precision default 0,
+    animal_protein_servings double precision default 0,
+    plant_protein_servings double precision default 0,
+    saturated_fat_servings double precision default 0,
+    unsaturated_fat_servings double precision default 0,
+    whole_grains_servings double precision default 0,
+    vegetables_servings double precision default 0,
+    fruits_servings double precision default 0,
+    simple_carbs_servings double precision default 0,
+    fiber_servings double precision default 0,
+    alcohol_servings double precision default 0,
+    updated_at timestamptz not null default now(),
+    primary key (recipe_id, owner_id)
+);
+
+alter table cozyhealth.recipe_nutrition enable row level security;
+
+drop policy if exists recipe_nutrition_own on cozyhealth.recipe_nutrition;
+create policy recipe_nutrition_own on cozyhealth.recipe_nutrition for all to authenticated
+    using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+
+grant select, insert, update, delete on cozyhealth.recipe_nutrition to authenticated;
+revoke all on cozyhealth.recipe_nutrition from anon;
+
+-- Where a logged entry came from, so a recipe log can say so.
+alter table cozyhealth.meal_entries add column if not exists recipe_id uuid;
+comment on column cozyhealth.meal_entries.recipe_id is
+    'Set when this entry was logged from a CozyCookBook recipe.';

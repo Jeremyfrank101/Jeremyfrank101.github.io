@@ -308,6 +308,7 @@ const Sync = {
                                    : this.client.from(op.table);
             let res;
             if (op.action === 'insert')      res = await from.insert(op.payload);
+            else if (op.action === 'upsert') res = await from.upsert(op.payload);
             else if (op.action === 'update') res = await from.update(op.payload).match(op.match);
             else if (op.action === 'delete') res = await from.delete().match(op.match);
             else throw new Error('unknown write action ' + op.action);
