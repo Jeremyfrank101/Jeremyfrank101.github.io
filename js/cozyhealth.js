@@ -42,6 +42,9 @@ const CozyHealth = {
 
     mounted: false,
     tab: 'today',
+    viewing: null,      // null = your own log; otherwise a user id shared with you
+    people: {},         // user id -> { email, username }
+    shares: [],
     data: { meals: [], workouts: [], mind: [], meditations: [], measurements: [], library: [], profile: null },
 
     // ---------- lifecycle ----------
@@ -71,21 +74,45 @@ const CozyHealth = {
 
     uid() { return Auth.getUser()?.id || null; },
 
+    // Whose log the screen is currently showing.
+    subjectId() { return this.viewing || this.uid(); },
+    isOwnLog()  { return !this.viewing; },
+
+    subjectName() {
+        if (this.isOwnLog()) return this.data.profile?.username || 'You';
+        const p = this.people[this.viewing];
+        return p ? (p.username || p.email) : 'them';
+    },
+
+    // People who have shared their log with me.
+    sharedWithMe() {
+        return this.shares.filter(s => s.shared_with_id === this.uid());
+    },
+
+    // People I have shared my log with.
+    sharedByMe() {
+        return this.shares.filter(s => s.owner_id === this.uid());
+    },
+
     // ---------- data ----------
 
     async refresh() {
         if (!Auth.client || !this.uid()) return;
         this._setBusy(true);
         try {
+            await this._loadShares();
+
+            const subject = this.subjectId();
             const since = new Date(Date.now() - 30 * 864e5).toISOString();
+            const own = q => q.eq('owner_id', subject);
             const [meals, workouts, mind, meditations, measurements, library, profile] = await Promise.all([
-                this.db('meal_entries').select('*').gte('date', since).order('date', { ascending: false }),
-                this.db('workouts').select('*').gte('date', since).order('date', { ascending: false }),
-                this.db('mind_entries').select('*').gte('date', since).order('date', { ascending: false }),
-                this.db('meditation_sessions').select('*').gte('date', since).order('date', { ascending: false }),
-                this.db('profile_measurements').select('*').order('date', { ascending: false }).limit(60),
+                own(this.db('meal_entries').select('*').gte('date', since)).order('date', { ascending: false }),
+                own(this.db('workouts').select('*').gte('date', since)).order('date', { ascending: false }),
+                own(this.db('mind_entries').select('*').gte('date', since)).order('date', { ascending: false }),
+                own(this.db('meditation_sessions').select('*').gte('date', since)).order('date', { ascending: false }),
+                own(this.db('profile_measurements').select('*')).order('date', { ascending: false }).limit(60),
                 this.db('generic_meals').select('*').order('name'),
-                this.db('user_profiles').select('*').eq('owner_id', this.uid()).maybeSingle()
+                this.db('user_profiles').select('*').eq('owner_id', subject).maybeSingle()
             ]);
 
             const err = [meals, workouts, mind, meditations, measurements, library, profile].find(r => r.error);
@@ -101,7 +128,7 @@ const CozyHealth = {
                 profile: profile.data || null
             };
 
-            if (!this.data.profile) await this._ensureProfile();
+            if (!this.data.profile && this.isOwnLog()) await this._ensureProfile();
             this._error = null;
         } catch (e) {
             console.error('[CozyHealth] load failed', e);
@@ -109,6 +136,56 @@ const CozyHealth = {
         }
         this._setBusy(false);
         this.render();
+    },
+
+    async _loadShares() {
+        const uid = this.uid();
+        const { data, error } = await Auth.client.from('shares')
+            .select('*').eq('resource_type', 'health');
+        if (error) { console.warn('[CozyHealth] shares load failed', error); return; }
+        this.shares = data || [];
+
+        const ids = new Set();
+        this.shares.forEach(s => { ids.add(s.owner_id); ids.add(s.shared_with_id); });
+        ids.delete(uid);
+        if (!ids.size) return;
+        const { data: people } = await Auth.client.from('profiles')
+            .select('user_id,email,username').in('user_id', [...ids]);
+        (people || []).forEach(p => { this.people[p.user_id] = p; });
+    },
+
+    async shareHealth(email) {
+        const { data: found, error: e1 } = await Auth.client
+            .rpc('find_user_by_email', { p_email: email });
+        if (e1) throw new Error(e1.message);
+        const person = Array.isArray(found) ? found[0] : found;
+        if (!person) throw new Error(`No CozyHome account uses ${email}.`);
+
+        const { error } = await Auth.client.from('shares').insert({
+            resource_type: 'health',
+            resource_id: this.uid(),      // you share your own log
+            owner_id: this.uid(),
+            shared_with_id: person.user_id
+        });
+        if (error) {
+            if (error.code === '23505') throw new Error('Already shared with that person.');
+            throw new Error(error.message);
+        }
+        await this.refresh();
+    },
+
+    async unshareHealth(shareId) {
+        const { error } = await Auth.client.from('shares').delete().eq('id', shareId);
+        if (error) throw new Error(error.message);
+        await this.refresh();
+    },
+
+    async viewPerson(id) {
+        this.viewing = id || null;
+        this.tab = 'today';
+        this.container.querySelectorAll('[data-tab]').forEach(x =>
+            x.classList.toggle('active', x.dataset.tab === 'today'));
+        await this.refresh();
     },
 
     async _ensureProfile() {
@@ -180,6 +257,7 @@ const CozyHealth = {
     _buildDOM() {
         this.container.innerHTML = `
         <div class="chx-root">
+            <div class="chx-people"></div>
             <div class="chx-tabs">
                 ${this.TABS.map(t => `<button class="chx-tab ${t.id === this.tab ? 'active' : ''}" data-tab="${t.id}">${t.label}</button>`).join('')}
             </div>
@@ -188,6 +266,7 @@ const CozyHealth = {
         </div>`;
 
         this.dom = {
+            people: this.container.querySelector('.chx-people'),
             body: this.container.querySelector('.chx-body'),
             toast: this.container.querySelector('.chx-toast')
         };
@@ -223,6 +302,7 @@ const CozyHealth = {
             </div>`;
             return;
         }
+        this._renderPeople();
         const fn = {
             today: () => this.renderToday(),
             food:  () => this.renderFood(),
@@ -232,6 +312,26 @@ const CozyHealth = {
         }[this.tab];
         this.dom.body.innerHTML = fn ? fn() : '';
         this._bindTab();
+    },
+
+    _renderPeople() {
+        const incoming = this.sharedWithMe();
+        if (!incoming.length && this.isOwnLog()) { this.dom.people.innerHTML = ''; return; }
+        const chip = (id, label, active) =>
+            `<button class="chx-person ${active ? 'active' : ''}" data-person="${id || ''}">${this.esc(label)}</button>`;
+        this.dom.people.innerHTML =
+            chip('', 'You', this.isOwnLog()) +
+            incoming.map(s => chip(s.owner_id,
+                this.people[s.owner_id]?.username || this.people[s.owner_id]?.email || 'Someone',
+                this.viewing === s.owner_id)).join('');
+        this.dom.people.querySelectorAll('[data-person]').forEach(b =>
+            b.addEventListener('click', () => this.viewPerson(b.dataset.person || null)));
+    },
+
+    // A banner making it obvious you are looking at someone else's log.
+    _viewingBanner() {
+        if (this.isOwnLog()) return '';
+        return `<div class="chx-viewing">👀 Viewing <strong>${this.esc(this.subjectName())}</strong>'s log — read only</div>`;
     },
 
     // ---------- Today ----------
@@ -256,6 +356,7 @@ const CozyHealth = {
         };
 
         return `
+        ${this._viewingBanner()}
         <div class="chx-hello">
             <div>
                 <h2>Hello, ${this.esc(name)}</h2>
@@ -296,6 +397,8 @@ const CozyHealth = {
             </div>
         </div>
 
+        ${this.isOwnLog() ? this._shareCard() : ''}
+
         ${meals.length ? `<div class="chx-card">
             <h3>Today's meals</h3>
             ${meals.map(m => this._mealRow(m)).join('')}
@@ -305,12 +408,33 @@ const CozyHealth = {
         </div>`}`;
     },
 
+    _shareCard() {
+        const out = this.sharedByMe();
+        return `<div class="chx-card">
+            <h3>Share your health log</h3>
+            ${out.length ? `<div class="chx-share-list">${out.map(s => `
+                <div class="chx-item">
+                    <div class="chx-item-main"><strong>${this.esc(this.people[s.shared_with_id]?.username || this.people[s.shared_with_id]?.email || 'Someone')}</strong>
+                    <span class="chx-dim">can view your stats</span></div>
+                    <button class="chx-del" data-unshare-health="${s.id}" title="Stop sharing">✕</button>
+                </div>`).join('')}</div>`
+              : '<p class="chx-dim">Not shared with anyone yet.</p>'}
+            <div class="chx-row" style="margin-top:10px">
+                <input type="email" id="chx-share-email" placeholder="their@email.com">
+                <button class="chx-btn" id="chx-share-btn" style="flex:0 0 auto">Share</button>
+            </div>
+            <p class="chx-dim chx-note">They can see your stats but cannot change anything.</p>
+            <p class="chx-share-err hidden" id="chx-share-err"></p>
+        </div>`;
+    },
+
     // ---------- Food ----------
 
     renderFood() {
         const meals = this.todayMeals();
         const t = this.totals(meals);
 
+        if (!this.isOwnLog()) return this._readOnlyFood();
         return `
         <div class="chx-card">
             <h3>Quick add</h3>
@@ -364,6 +488,23 @@ const CozyHealth = {
         </div>`;
     },
 
+    // When viewing a partner, show their intake without any logging controls.
+    _readOnlyFood() {
+        const meals = this.todayMeals();
+        const t = this.totals(meals);
+        return `${this._viewingBanner()}
+        <div class="chx-card">
+            <h3>${this.esc(this.subjectName())} today · ${this.fmt(t.calories)} kcal</h3>
+            <div class="chx-macros">
+                <span>P ${this.fmt(t.protein_grams)}g</span>
+                <span>C ${this.fmt(t.carbs_grams)}g</span>
+                <span>F ${this.fmt(t.fat_grams)}g</span>
+                <span>Fibre ${this.fmt(t.fiber_grams)}g</span>
+            </div>
+            ${meals.length ? meals.map(m => this._mealRow(m)).join('') : '<p class="chx-dim">Nothing logged today.</p>'}
+        </div>`;
+    },
+
     _mealRow(m, deletable) {
         return `<div class="chx-item">
             <div class="chx-item-main">
@@ -378,11 +519,13 @@ const CozyHealth = {
     // ---------- Move ----------
 
     renderMove() {
+        const readOnly = !this.isOwnLog();
         const recent = this.data.workouts.slice(0, 12);
         const week = this.data.workouts.filter(w => new Date(w.date) > new Date(Date.now() - 7 * 864e5));
         const weekMin = week.reduce((n, w) => n + (w.duration_minutes || 0), 0);
 
         return `
+        ${this._viewingBanner()}
         <div class="chx-card">
             <h3>This week</h3>
             <div class="chx-macros">
@@ -391,7 +534,7 @@ const CozyHealth = {
             </div>
         </div>
 
-        <div class="chx-card">
+        ${readOnly ? '' : `<div class="chx-card">
             <h3>Log a workout</h3>
             <div class="chx-row">
                 <select id="chx-w-type">${this.WORKOUT_TYPES.map(x => `<option>${x}</option>`).join('')}</select>
@@ -403,7 +546,7 @@ const CozyHealth = {
             </div>
             <input type="text" id="chx-w-notes" placeholder="Notes (optional)">
             <button class="chx-btn chx-primary" id="chx-add-workout">Add workout</button>
-        </div>
+        </div>`}
 
         <div class="chx-card">
             <h3>Recent</h3>
@@ -414,7 +557,7 @@ const CozyHealth = {
                         <span class="chx-dim">${this.esc(w.intensity)} · ${this.when(w.date)}${w.notes ? ' · ' + this.esc(w.notes) : ''}</span>
                     </div>
                     <span class="chx-item-num">${w.duration_minutes} min</span>
-                    <button class="chx-del" data-del-workout="${w.id}" title="Delete">✕</button>
+                    ${readOnly ? '' : `<button class="chx-del" data-del-workout="${w.id}" title="Delete">✕</button>`}
                 </div>`).join('') : '<p class="chx-dim">No workouts in the last 30 days.</p>'}
         </div>`;
     },
@@ -422,6 +565,7 @@ const CozyHealth = {
     // ---------- Mind ----------
 
     renderMind() {
+        if (!this.isOwnLog()) return this._readOnlyMind();
         const today = this.todayMind();
         const recent = this.data.mind.slice(0, 10);
         const sessions = this.data.meditations.slice(0, 6);
@@ -480,9 +624,25 @@ const CozyHealth = {
         </div>` : ''}`;
     },
 
+    _readOnlyMind() {
+        const recent = this.data.mind.slice(0, 14);
+        return `${this._viewingBanner()}
+        <div class="chx-card">
+            <h3>${this.esc(this.subjectName())}'s check-ins</h3>
+            ${recent.length ? recent.map(m => `
+                <div class="chx-item">
+                    <div class="chx-item-main">
+                        <strong>${['😞','🙁','😐','🙂','😄'][Math.max(0, Math.min(4, (m.mood || 3) - 1))]} mood ${m.mood} · energy ${m.energy}</strong>
+                        <span class="chx-dim">${this.when(m.date)} · ${m.sleep_hours}h sleep</span>
+                    </div>
+                </div>`).join('') : '<p class="chx-dim">No check-ins shared.</p>'}
+        </div>`;
+    },
+
     // ---------- Body ----------
 
     renderBody() {
+        const readOnly = !this.isOwnLog();
         const ms = this.data.measurements;
         const latest = ms[0];
         const prev = ms[1];
@@ -490,6 +650,7 @@ const CozyHealth = {
             ? latest.weight_lbs - prev.weight_lbs : null;
 
         return `
+        ${this._viewingBanner()}
         ${latest ? `<div class="chx-card">
             <h3>Latest</h3>
             <div class="chx-grid">
@@ -499,7 +660,7 @@ const CozyHealth = {
             </div>
         </div>` : ''}
 
-        <div class="chx-card">
+        ${readOnly ? '' : `<div class="chx-card">
             <h3>Log a measurement</h3>
             <div class="chx-row">
                 <input type="number" id="chx-m-weight" placeholder="weight lbs" step="0.1" min="0">
@@ -508,7 +669,7 @@ const CozyHealth = {
             </div>
             <input type="text" id="chx-m-notes" placeholder="Notes (optional)">
             <button class="chx-btn chx-primary" id="chx-add-measure">Add measurement</button>
-        </div>
+        </div>`}
 
         <div class="chx-card">
             <h3>History</h3>
@@ -518,7 +679,7 @@ const CozyHealth = {
                         <strong>${this.fmt(m.weight_lbs, 1)} lbs</strong>
                         <span class="chx-dim">${this.when(m.date)}${m.notes ? ' · ' + this.esc(m.notes) : ''}</span>
                     </div>
-                    <button class="chx-del" data-del-measure="${m.id}" title="Delete">✕</button>
+                    ${readOnly ? '' : `<button class="chx-del" data-del-measure="${m.id}" title="Delete">✕</button>`}
                 </div>`).join('') : '<p class="chx-dim">No measurements yet.</p>'}
         </div>`;
     },
@@ -564,6 +725,17 @@ const CozyHealth = {
         on('chx-save-mind', 'click', () => this.saveMind());
         on('chx-add-measure', 'click', () => this.addMeasurement());
         on('chx-med-toggle', 'click', () => this.toggleMeditation());
+
+        on('chx-share-btn', 'click', async () => {
+            const input = document.getElementById('chx-share-email');
+            const err = document.getElementById('chx-share-err');
+            const email = (input.value || '').trim();
+            if (!email) return;
+            try { await this.shareHealth(email); }
+            catch (e) { if (err) { err.textContent = e.message; err.classList.remove('hidden'); } }
+        });
+        this.container.querySelectorAll('[data-unshare-health]').forEach(b =>
+            b.addEventListener('click', () => this.unshareHealth(b.dataset.unshareHealth)));
 
         ['mood', 'energy', 'sleep'].forEach(k => {
             const el = $('chx-' + k), out = $('chx-' + k + '-v');

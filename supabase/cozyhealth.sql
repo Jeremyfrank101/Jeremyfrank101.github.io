@@ -92,3 +92,40 @@ grant select, insert, update, delete on all tables in schema cozyhealth to authe
 --   update cozyhealth.meal_entries set owner_id = '<uuid>' where owner_id is null;
 --   ... and the same for workouts, mind_entries, meditation_sessions,
 --   profile_measurements and achievements.
+
+-- ------------------------------------------------------ sharing a log ----
+-- Read only for the viewer: you look at a partner's stats, you do not log
+-- meals on their behalf. resource_id is the sharer's own user id.
+
+alter table public.shares drop constraint if exists shares_resource_type_check;
+alter table public.shares add constraint shares_resource_type_check
+    check (resource_type in ('home', 'project', 'health'));
+
+create or replace function public.can_view_health(owner uuid)
+returns boolean language sql stable security definer set search_path = public, pg_temp as $$
+    select owner is not null and (
+        owner = auth.uid()
+        or exists (select 1 from public.shares
+                   where resource_type = 'health' and resource_id = owner
+                     and shared_with_id = auth.uid())
+    );
+$$;
+
+-- Each table gets a read policy that honours shares and a write policy that
+-- stays with the owner.
+do $$
+declare t text;
+begin
+    foreach t in array array['user_profiles','profile_measurements','achievements',
+                             'meal_entries','workouts','mind_entries','meditation_sessions']
+    loop
+        execute format('drop policy if exists %I on cozyhealth.%I', t || '_own', t);
+        execute format('drop policy if exists %I on cozyhealth.%I', t || '_read', t);
+        execute format('drop policy if exists %I on cozyhealth.%I', t || '_write', t);
+        execute format('create policy %I on cozyhealth.%I for select to authenticated
+                            using (public.can_view_health(owner_id))', t || '_read', t);
+        execute format('create policy %I on cozyhealth.%I for all to authenticated
+                            using (owner_id = auth.uid()) with check (owner_id = auth.uid())',
+                       t || '_write', t);
+    end loop;
+end $$;
