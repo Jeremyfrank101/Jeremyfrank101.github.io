@@ -15,6 +15,18 @@ const DesertGame = {
     WALK_SPEED: 9,
     RUN_SPEED: 15,
 
+    // Journey mechanics
+    RIDE_SPEED: 15,       // mounted base speed
+    FEED_BONUS: 2,        // camel fodder
+    SHOES_BONUS: 1.5,     // leather sandals
+    WATER_MAX: 100,
+    SKIN_BONUS: 60,       // goatskin bag capacity
+    FOOD_MAX: 100,
+    WATER_DRAIN: 1.25,    // per second in the open desert
+    FOOD_DRAIN: 0.7,
+    OASIS_REFILL: 45,
+    ARRIVE_RADIUS: 30,
+
     // Where the player starts. Ground clutter is kept clear of it, so this has
     // to be one shared constant rather than two that can drift apart.
     SPAWN: { x: 0, z: 26 },
@@ -22,23 +34,35 @@ const DesertGame = {
     // Cowrie shells were the everyday currency of the Mali Empire, imported
     // from the Maldives; gold dust settled the large caravan accounts.
     PRODUCTS: [
-        { id: 'food',  icon: '🌾', name: 'Dried Dates & Millet', price: 60, note: 'Enough to cross the empty stretch.' },
-        { id: 'water', icon: '💧', name: 'Well Water',           price: 40, note: 'Drawn from the wells of Timbuktu.' },
-        { id: 'skin',  icon: '🫗', name: 'Goatskin Water Bag',   price: 80, note: 'Sweats just enough to stay cool.' },
-        { id: 'feed',  icon: '🌿', name: 'Camel Fodder',         price: 50, note: 'Dried grass and date pits.' },
-        { id: 'shoes', icon: '👡', name: 'Leather Sandals',      price: 70, note: 'Stitched by Tuareg leatherworkers.' }
+        { id: 'food',  icon: '🌾', name: 'Dried Dates & Millet', price: 60, note: 'Hunger gnaws 30% slower on the road.' },
+        { id: 'water', icon: '💧', name: 'Well Water',           price: 40, note: 'You leave every gate with full skins.' },
+        { id: 'skin',  icon: '🫗', name: 'Goatskin Water Bag',   price: 80, note: 'Carries 60 extra measures of water.' },
+        { id: 'feed',  icon: '🌿', name: 'Camel Fodder',         price: 50, note: 'Your camel rides two paces faster.' },
+        { id: 'shoes', icon: '👡', name: 'Leather Sandals',      price: 70, note: 'You walk a pace and a half faster.' }
     ],
 
     CAMEL_PRICE: 500,
 
     // Real destinations of Malian caravans in the 14th century.
     QUESTS: [
-        { id: 'taghaza',   name: 'Taghaza',   heading: 'north',      reward: 400, blurb: 'The salt mines. The houses there are built of salt blocks, and nothing grows. Bring back slabs and they will sell for their weight in the south.' },
-        { id: 'walata',    name: 'Walata',    heading: 'north-west', reward: 350, blurb: 'The first town a caravan meets after the crossing. Ibn Battuta rested there. Carry cloth and return with dates.' },
-        { id: 'sijilmasa', name: 'Sijilmasa', heading: 'north',      reward: 900, blurb: 'Beyond the desert in the Maghrib, where the gold road ends and the Mediterranean begins. Two months of sand, if you live.' },
-        { id: 'gao',       name: 'Gao',       heading: 'east',       reward: 250, blurb: 'Downriver on the Niger, the Songhai city. An easy road by the water, and good prices for copper from Takedda.' },
-        { id: 'djenne',    name: 'Djenné',    heading: 'south-west', reward: 200, blurb: 'The market that feeds Timbuktu. Gold comes up from Bambuk through its gates, and rice goes down.' },
-        { id: 'niani',     name: 'Niani',     heading: 'south',      reward: 500, blurb: 'The seat of Mansa Musa himself. Carry word to the court, and the court pays well for word.' }
+        { id: 'taghaza',   name: 'Taghaza',   heading: 'north',      reward: 400, pos: { x: 0,    z: -900 },
+          blurb: 'The salt mines. The houses there are built of salt blocks, and nothing grows. Bring back slabs and they will sell for their weight in the south.',
+          arrival: 'Salt slabs stacked like masonry, glittering to the horizon. Yours will sell for their weight in gold downriver.' },
+        { id: 'walata',    name: 'Walata',    heading: 'north-west', reward: 350, pos: { x: -500, z: -500 },
+          blurb: 'The first town a caravan meets after the crossing. Ibn Battuta rested there. Carry cloth and return with dates.',
+          arrival: 'The leaning red streets take your cloth; dates and news of the north come back in its place.' },
+        { id: 'sijilmasa', name: 'Sijilmasa', heading: 'north',      reward: 900, pos: { x: -200, z: -1400 },
+          blurb: 'Beyond the desert in the Maghrib, where the gold road ends and the Mediterranean begins. Two months of sand, if you live.',
+          arrival: 'Two months of sand behind you, and the Maghrib opens: gold buys silk here, and silk buys everything.' },
+        { id: 'gao',       name: 'Gao',       heading: 'east',       reward: 250, pos: { x: 600,  z: 0 },
+          blurb: 'Downriver on the Niger, the Songhai city. An easy road by the water, and good prices for copper from Takedda.',
+          arrival: 'The Songhai wharves take your copper before the Niger swallows the sun.' },
+        { id: 'djenne',    name: 'Djenné',    heading: 'south-west', reward: 200, pos: { x: -360, z: 360 },
+          blurb: 'The market that feeds Timbuktu. Gold comes up from Bambuk through its gates, and rice goes down.',
+          arrival: 'The market roars around its great mud walls; your goods vanish into it and rice fills the empty bags.' },
+        { id: 'niani',     name: 'Niani',     heading: 'south',      reward: 500, pos: { x: 0,    z: 800 },
+          blurb: 'The seat of Mansa Musa himself. Carry word to the court, and the court pays well for word.',
+          arrival: 'At the court of the Mansa your word is heard — and the court pays well for word.' }
     ],
 
     // ---------- Lifecycle ----------
@@ -79,18 +103,24 @@ const DesertGame = {
             else obj.material?.dispose();
         });
         this.scene = this.renderer = this.camera = null;
+        this.skyGroup = null; this.clouds = null; this.oases = null;
         if (this.container) this.container.innerHTML = '';
         this.container = null;
     },
 
     resetState() {
-        this.state = 'intro'; // intro | playing | panel | dead
+        this.state = 'intro'; // intro | playing | panel | arrived | victory | dead
         this.cowries = this.START_COWRIES;
         this.owned = {};
         this.hasCamel = false;
         this.quest = null;
+        this.completed = [];
+        this.water = this.WATER_MAX;
+        this.food = this.FOOD_MAX;
         this.exposure = 0;
         this.outside = false;
+        this.riding = false;
+        this._eye = undefined;
         this.activeNPC = null;
         // yaw 0 faces -Z, which looks up the plaza toward the palace
         this.yaw = 0;
@@ -122,9 +152,18 @@ const DesertGame = {
 
             <div class="dg-quest-banner hidden"></div>
             <div class="dg-timer hidden">
-                <div class="dg-timer-label">Exposure</div>
+                <div class="dg-timer-label">Thirst</div>
                 <div class="dg-timer-count">30</div>
                 <div class="dg-timer-bar"><div class="dg-timer-fill"></div></div>
+            </div>
+
+            <div class="dg-nav hidden">
+                <div class="dg-compass"><span class="dg-compass-arrow">▲</span></div>
+                <div class="dg-nav-text"><span class="dg-nav-dest"></span><span class="dg-nav-dist"></span></div>
+            </div>
+            <div class="dg-meters">
+                <div class="dg-meter"><span class="dg-meter-ico">💧</span><div class="dg-meter-bar"><div class="dg-meter-fill water"></div></div></div>
+                <div class="dg-meter"><span class="dg-meter-ico">🌾</span><div class="dg-meter-bar"><div class="dg-meter-fill food"></div></div></div>
             </div>
 
             <div class="dg-prompt hidden"></div>
@@ -138,7 +177,7 @@ const DesertGame = {
                     <div class="dg-kicker">Timbuktu · Mali Empire · 1325</div>
                     <h2>Sands of Mali</h2>
                     <p>Mansa Musa has returned from Mecca and the city is thick with builders, scholars and caravan men. You have <strong>1,000 cowries</strong> and an intention to trade across the Sahara.</p>
-                    <p class="dg-hint">Provision yourself at the market, buy a camel, and take a commission from the scholar at Sankore. The gate guards will not let you leave unprovisioned — and the desert past the walls kills in half a minute.</p>
+                    <p class="dg-hint">Provision at the market — every piece of kit earns its price now — buy a camel to ride, and take a commission at Sankore. Follow the pillar of light to your destination, watch your water and food on the way, and the caravan will carry you home rich. Deliver all six commissions to master the trans-Saharan trade.</p>
                     <div class="dg-controls-help">
                         <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span>
                         <span><kbd>Shift</kbd> run</span>
@@ -160,6 +199,26 @@ const DesertGame = {
                     <button class="dg-btn dg-restart" type="button">Begin Again in Timbuktu</button>
                 </div>
             </div>
+
+            <div class="dg-overlay dg-arrival hidden">
+                <div class="dg-card dg-death-card">
+                    <div class="dg-arrival-icon">🐪</div>
+                    <h2 class="dg-arrival-title"></h2>
+                    <p class="dg-death-text dg-arrival-text"></p>
+                    <p class="dg-arrival-reward"></p>
+                    <button class="dg-btn dg-return" type="button">Ride Home with the Caravan</button>
+                    <button class="dg-linkbtn dg-stay" type="button">Keep wandering</button>
+                </div>
+            </div>
+
+            <div class="dg-overlay dg-victory hidden">
+                <div class="dg-card dg-death-card">
+                    <div class="dg-victory-icon">👑</div>
+                    <h2>Master of the Trans-Saharan Trade</h2>
+                    <p class="dg-death-text dg-victory-text"></p>
+                    <button class="dg-btn dg-victory-restart" type="button">Begin a New Life in Timbuktu</button>
+                </div>
+            </div>
         </div>`;
 
         const q = s => this.container.querySelector(s);
@@ -174,6 +233,21 @@ const DesertGame = {
             timer: q('.dg-timer'),
             timerCount: q('.dg-timer-count'),
             timerFill: q('.dg-timer-fill'),
+            nav: q('.dg-nav'),
+            compassArrow: q('.dg-compass-arrow'),
+            navDest: q('.dg-nav-dest'),
+            navDist: q('.dg-nav-dist'),
+            waterFill: q('.dg-meter-fill.water'),
+            foodFill: q('.dg-meter-fill.food'),
+            arrival: q('.dg-arrival'),
+            arrivalTitle: q('.dg-arrival-title'),
+            arrivalText: q('.dg-arrival-text'),
+            arrivalReward: q('.dg-arrival-reward'),
+            returnBtn: q('.dg-return'),
+            stayBtn: q('.dg-stay'),
+            victory: q('.dg-victory'),
+            victoryText: q('.dg-victory-text'),
+            victoryRestart: q('.dg-victory-restart'),
             prompt: q('.dg-prompt'),
             toast: q('.dg-toast'),
             intro: q('.dg-intro'),
@@ -191,6 +265,17 @@ const DesertGame = {
 
         this.dom.begin.addEventListener('click', () => this._begin());
         this.dom.restart.addEventListener('click', () => this._restart());
+        this.dom.returnBtn.addEventListener('click', () => this._returnHome());
+        this.dom.stayBtn.addEventListener('click', () => {
+            this.dom.arrival.classList.add('hidden');
+            this.state = 'playing';
+            this._toast('The desert is yours. Mind your water.');
+            this._grabMouse();
+        });
+        this.dom.victoryRestart.addEventListener('click', () => {
+            this.dom.victory.classList.add('hidden');
+            this._restart();
+        });
 
         if (this._isTouch()) {
             this.dom.stick.classList.remove('hidden');
@@ -199,6 +284,7 @@ const DesertGame = {
         }
 
         this._renderHUD();
+        this._renderMeters();
     },
 
     _isTouch() {
@@ -223,9 +309,9 @@ const DesertGame = {
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
         this.scene = new THREE.Scene();
-        this.scene.fog = new THREE.FogExp2(0xeed9b0, 0.0048);
+        this.scene.fog = new THREE.FogExp2(0xeed9b0, 0.0031);
 
-        this.camera = new THREE.PerspectiveCamera(72, w / h, 0.1, 1200);
+        this.camera = new THREE.PerspectiveCamera(72, w / h, 0.1, 2600);
 
         this._addSky();
         this._addLights();
@@ -238,6 +324,9 @@ const DesertGame = {
         this._buildNPCs();
         this._buildCamel();
         this._addDust();
+        this._buildDestinations();
+        this._addOases();
+        this._addClouds();
 
         this._onResize = this._onResize.bind(this);
         window.addEventListener('resize', this._onResize);
@@ -422,45 +511,50 @@ const DesertGame = {
         c.width = 4; c.height = 512;
         const ctx = c.getContext('2d');
         const g = ctx.createLinearGradient(0, 0, 0, 512);
-        g.addColorStop(0.00, '#2c66a8');   // zenith
-        g.addColorStop(0.38, '#6fa3cf');
-        g.addColorStop(0.60, '#b8ccd8');
-        g.addColorStop(0.74, '#eedcb4');   // dust band
-        g.addColorStop(1.00, '#f4e2bd');   // horizon haze
+        g.addColorStop(0.00, '#2b5ea0');
+        g.addColorStop(0.34, '#5f9bcc');
+        g.addColorStop(0.55, '#a8c4d6');
+        g.addColorStop(0.70, '#ecd9b0');
+        g.addColorStop(0.86, '#f6ddb2');
+        g.addColorStop(1.00, '#f4e0ba');
         ctx.fillStyle = g;
         ctx.fillRect(0, 0, 4, 512);
 
         const tex = new THREE.CanvasTexture(c);
         tex.magFilter = THREE.LinearFilter;
+
+        // The whole sky rig follows the player, so the dome is never left
+        // behind on a 1,400-pace journey.
+        this.skyGroup = new THREE.Group();
+
         const sky = new THREE.Mesh(
-            new THREE.SphereGeometry(600, 32, 20),
-            // toneMapped:false — the gradient is already the look we want; running
-            // it through ACES just desaturates it.
+            new THREE.SphereGeometry(1700, 32, 20),
             new THREE.MeshBasicMaterial({
                 map: tex, side: THREE.BackSide, fog: false,
                 depthWrite: false, toneMapped: false
             })
         );
-        this.scene.add(sky);
+        this.skyGroup.add(sky);
 
-        // The sun: a hot core inside a broad atmospheric glow.
         const glow = new THREE.Sprite(new THREE.SpriteMaterial({
             map: this._makeGlowTexture(),
             color: 0xffedc4, transparent: true, opacity: 0.8,
             fog: false, depthWrite: false, toneMapped: false
         }));
-        glow.scale.set(280, 280, 1);
-        glow.position.set(-260, 165, -430);
-        this.scene.add(glow);
+        glow.scale.set(760, 760, 1);
+        glow.position.set(-700, 430, -1180);
+        this.skyGroup.add(glow);
 
         const core = new THREE.Sprite(new THREE.SpriteMaterial({
             map: this._makeGlowTexture(),
             color: 0xfffbee, transparent: true, opacity: 1,
             fog: false, depthWrite: false, toneMapped: false
         }));
-        core.scale.set(80, 80, 1);
+        core.scale.set(210, 210, 1);
         core.position.copy(glow.position);
-        this.scene.add(core);
+        this.skyGroup.add(core);
+
+        this.scene.add(this.skyGroup);
     },
 
     _addLights() {
@@ -491,11 +585,13 @@ const DesertGame = {
             Math.cos(z * 0.019) * 2.9 +
             Math.sin((x + z) * 0.0105) * 3.8 +
             Math.sin(x * 0.006 - z * 0.008) * 5.2;
-        return dunes * t;
+        // long swells give the far erg real topography
+        const far = Math.sin(x * 0.0011 + 2.1) * Math.cos(z * 0.0009 - 1.3) * 9;
+        return (dunes + far) * t;
     },
 
     _addGround() {
-        const geo = new THREE.PlaneGeometry(1000, 1000, 150, 150);
+        const geo = new THREE.PlaneGeometry(4000, 4000, 220, 220);
         geo.rotateX(-Math.PI / 2);
         const pos = geo.attributes.position;
         const colors = [];
@@ -513,7 +609,7 @@ const DesertGame = {
         geo.computeVertexNormals();
 
         const sand = this._sandTexture();
-        sand.repeat.set(58, 58);
+        sand.repeat.set(210, 210);
 
         const ground = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
             vertexColors: true,
@@ -736,9 +832,9 @@ const DesertGame = {
 
         // Pre-roll placements so each geometry knows its instance count.
         const spots = [];
-        for (let i = 0; i < 300; i++) {
+        for (let i = 0; i < 380; i++) {
             const a = rnd() * Math.PI * 2;
-            const r = 14 + rnd() * 300;
+            const r = 14 + rnd() * 700;
             const x = Math.cos(a) * r, z = Math.sin(a) * r;
             const keep = Math.hypot(x, z) >= 16
                 && Math.hypot(x - this.SPAWN.x, z - this.SPAWN.z) >= 11
@@ -778,9 +874,9 @@ const DesertGame = {
 
         // Dry scrub: crossed planes, cheap and reads well at a distance.
         const scrubPlacements = [];
-        for (let i = 0; i < 190; i++) {
+        for (let i = 0; i < 240; i++) {
             const a = rnd() * Math.PI * 2;
-            const r = 18 + rnd() * 260;
+            const r = 18 + rnd() * 620;
             const x = Math.cos(a) * r, z = Math.sin(a) * r;
             // Scrub belongs out past the built-up ground, not in the market plaza.
             if (r < this.TOWN_RADIUS * 0.72) continue;
@@ -1409,6 +1505,9 @@ const DesertGame = {
 
     _restart() {
         this.dom.death.classList.add('hidden');
+        this.dom.arrival.classList.add('hidden');
+        this.dom.victory.classList.add('hidden');
+        this.dom.nav.classList.add('hidden');
         this.resetState();
         this.state = 'playing';
         if (this.camel) this.camel.visible = false;
@@ -1417,12 +1516,14 @@ const DesertGame = {
         this.dom.timer.classList.add('hidden');
         this.dom.questBanner.classList.add('hidden');
         this._renderHUD();
+        this._renderMeters();
         this._grabMouse();
     },
 
     _die(reason) {
         this.state = 'dead';
         if (document.pointerLockElement === this.canvas) document.exitPointerLock();
+        this.dom.nav.classList.add('hidden');
         this.dom.deathText.textContent = reason;
         this.dom.death.classList.remove('hidden');
         this.dom.timer.classList.add('hidden');
@@ -1527,18 +1628,20 @@ const DesertGame = {
             body = `
             <p class="dg-speech">"Timbuktu keeps more books than gold, but the gold pays for the books. Choose a road and I will write you a commission."</p>
             <div class="dg-quests">${this.QUESTS.map(q => {
+                const done = this.completed.includes(q.id);
                 const taken = this.quest && this.quest.id === q.id;
-                return `<div class="dg-quest ${taken ? 'taken' : ''}">
+                const paces = Math.round(Math.hypot(q.pos.x, q.pos.z));
+                return `<div class="dg-quest ${taken || done ? 'taken' : ''}">
                     <div class="dg-quest-head">
                         <span class="dg-quest-name">${q.name}</span>
-                        <span class="dg-quest-dir">${q.heading}</span>
+                        <span class="dg-quest-dir">${q.heading} · ${paces} paces</span>
                     </div>
                     <p class="dg-quest-blurb">${q.blurb}</p>
                     <div class="dg-quest-foot">
                         <span class="dg-quest-reward">${q.reward} 🐚 on delivery</span>
-                        ${taken
-                            ? '<span class="dg-owned">✓ accepted</span>'
-                            : `<button class="dg-buy" data-quest="${q.id}">Accept</button>`}
+                        ${done ? '<span class="dg-owned">✓ delivered</span>'
+                          : taken ? '<span class="dg-owned">✓ accepted</span>'
+                          : `<button class="dg-buy" data-quest="${q.id}">Accept</button>`}
                     </div>
                 </div>`;
             }).join('')}</div>`;
@@ -1615,7 +1718,13 @@ const DesertGame = {
         const mag = Math.hypot(fwd, strafe);
         if (mag > 1) { fwd /= mag; strafe /= mag; }
 
-        const speed = (this.keys['shift'] ? this.RUN_SPEED : this.WALK_SPEED);
+        const outsideNow = Math.hypot(this.pos.x, this.pos.z) > this.TOWN_RADIUS;
+        this.riding = this.hasCamel && outsideNow;
+        let speed = this.riding
+            ? this.RIDE_SPEED + (this.owned.feed ? this.FEED_BONUS : 0)
+            : this.WALK_SPEED + (this.owned.shoes ? this.SHOES_BONUS : 0);
+        if (this.keys['shift']) speed *= this.riding ? 1.45 : 1.6;
+        if (this.food <= 0) speed *= 0.65;   // an empty belly slows the road
         const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
         // yaw 0 looks down -Z
         const dx = (-sin * fwd + cos * strafe) * speed * dt;
@@ -1640,16 +1749,22 @@ const DesertGame = {
         this.pos.y = this.groundHeight(nx, nz);
 
         // --- camera ---
-        this.camera.position.set(this.pos.x, this.pos.y + this.EYE_HEIGHT, this.pos.z);
+        const targetEye = this.riding ? 3.7 : this.EYE_HEIGHT;
+        this._eye = this._eye === undefined ? targetEye : this._eye + (targetEye - this._eye) * Math.min(1, dt * 5);
+        let eyeY = this.pos.y + this._eye;
+        if (this.riding && (fwd || strafe)) eyeY += Math.sin(performance.now() * 0.008) * 0.12;
+        this.camera.position.set(this.pos.x, eyeY, this.pos.z);
         this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
 
         // --- camel follows ---
-        if (this.hasCamel) this._updateCamel(dt);
+        if (this.hasCamel) this._updateCamel(dt, this.riding);
 
         this._updateLabels();
         this._updateDust(dt);
+        this._updateNav();
+        this._updateSky(dt);
 
-        // --- exposure ---
+        // --- survival: water, food, thirst ---
         const dist = Math.hypot(this.pos.x, this.pos.z);
         const wasOutside = this.outside;
         this.outside = dist > this.TOWN_RADIUS;
@@ -1657,23 +1772,67 @@ const DesertGame = {
         if (this.outside) {
             if (!wasOutside) {
                 this.exposure = 0;
-                this.dom.timer.classList.remove('hidden');
                 this._toast(this.hasCamel
-                    ? 'You pass the last cairn, camel in tow. The city falls behind.'
+                    ? 'You swing into the saddle as the last cairn passes. The city falls behind.'
                     : 'You pass the last cairn on foot. The city falls behind.');
             }
-            this.exposure += dt;
-            const left = Math.max(0, this.SURVIVE_SECONDS - this.exposure);
-            this.dom.timerCount.textContent = Math.ceil(left);
-            this.dom.timerFill.style.width = (left / this.SURVIVE_SECONDS * 100) + '%';
-            this.dom.vignette.style.opacity = Math.min(0.85, this.exposure / this.SURVIVE_SECONDS);
-            if (left <= 0) this._die(this._deathText());
-        } else if (wasOutside) {
-            this.exposure = 0;
-            this.dom.timer.classList.add('hidden');
-            this.dom.vignette.style.opacity = 0;
-            this._toast('Back within the cairns. The wells are close.');
+
+            let atOasis = null;
+            for (const o of this.oases) {
+                if (Math.hypot(o.x - this.pos.x, o.z - this.pos.z) < o.r) { atOasis = o; break; }
+            }
+
+            const foodMult = this.owned.food ? 0.7 : 1;
+            this.food = Math.max(0, this.food - this.FOOD_DRAIN * foodMult * dt);
+
+            if (atOasis) {
+                if (this.water < this.waterMax()) {
+                    this.water = Math.min(this.waterMax(), this.water + this.OASIS_REFILL * dt);
+                    if (!this._oasisToast || performance.now() - this._oasisToast > 8000) {
+                        this._oasisToast = performance.now();
+                        this._toast(atOasis.name + '. The skins go down sweet and cold.');
+                    }
+                }
+            } else {
+                this.water = Math.max(0, this.water - this.WATER_DRAIN * dt);
+            }
+
+            // it is thirst that kills, not the desert itself
+            if (this.water <= 0) {
+                this.exposure += dt;
+                const left = Math.max(0, this.SURVIVE_SECONDS - this.exposure);
+                this.dom.timer.classList.remove('hidden');
+                this.dom.timerCount.textContent = Math.ceil(left);
+                this.dom.timerFill.style.width = (left / this.SURVIVE_SECONDS * 100) + '%';
+                this.dom.vignette.style.opacity = Math.min(0.85, this.exposure / this.SURVIVE_SECONDS);
+                if (left <= 0) { this._renderMeters(); this._die(this._deathText()); return; }
+            } else if (this.exposure > 0) {
+                this.exposure = 0;
+                this.dom.timer.classList.add('hidden');
+                this.dom.vignette.style.opacity = 0;
+            }
+
+            // arrival at the commission's destination
+            if (this.quest) {
+                const q = this.quest;
+                if (Math.hypot(q.pos.x - this.pos.x, q.pos.z - this.pos.z) < this.ARRIVE_RADIUS) {
+                    this._renderMeters();
+                    this._arrive(q);
+                    return;
+                }
+            }
+        } else {
+            if (wasOutside) {
+                this.exposure = 0;
+                this.dom.timer.classList.add('hidden');
+                this.dom.vignette.style.opacity = 0;
+                this._toast('Back within the cairns. The wells of Timbuktu refill your skins.');
+            }
+            this.water = this.waterMax();
+            this.food = this.FOOD_MAX;
         }
+
+        this._renderMeters();
 
         // --- interaction prompt ---
         const npc = this._nearestNPC();
@@ -1693,9 +1852,9 @@ const DesertGame = {
     _deathText() {
         const where = this.quest ? `on the road to ${this.quest.name}` : 'with no road in mind';
         const beast = this.hasCamel
-            ? 'Your camel stands over you a while, then walks on alone.'
+            ? 'Your camel noses the empty waterskin, then walks on alone.'
             : 'You had no camel, and no shade but your own shadow.';
-        return `The heat took you ${where}, out past the last cairn of Timbuktu. ${beast}`;
+        return `Thirst took you ${where}, out past the last cairn of Timbuktu. ${beast}`;
     },
 
     _resolveCollisions(x, z) {
@@ -1713,11 +1872,26 @@ const DesertGame = {
         return { x, z };
     },
 
-    // The camel trails at your shoulder rather than steering at your face, so
-    // it stays out of the view and reads as being led.
-    _updateCamel(dt) {
-        const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);   // player forward
-        const rx = -fz, rz = fx;                                    // player right
+    // When riding, the camel sits just ahead-below the camera so its neck and
+    // head frame the bottom of the view. On foot it trails at your shoulder.
+    _updateCamel(dt, riding) {
+        const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);
+
+        if (riding) {
+            // The saddle sits almost directly under the camera, so the rider
+            // sees the neck and head ahead rather than the whole animal.
+            this.camelPos.x = this.pos.x + fx * 0.2;
+            this.camelPos.z = this.pos.z + fz * 0.2;
+            this.camel.position.set(
+                this.camelPos.x,
+                this.groundHeight(this.camelPos.x, this.camelPos.z),
+                this.camelPos.z
+            );
+            this.camel.rotation.y = Math.atan2(fx, fz) - Math.PI / 2;
+            return;
+        }
+
+        const rx = -fz, rz = fx;
         const tx = this.pos.x - fx * 3.6 + rx * 2.2;
         const tz = this.pos.z - fz * 3.6 + rz * 2.2;
 
@@ -1732,7 +1906,6 @@ const DesertGame = {
             this._camelHeading = Math.atan2(dx, dz) - Math.PI / 2;
         }
 
-        // ease toward the heading so it doesn't snap around when you turn
         if (this._camelHeading !== undefined) {
             let diff = this._camelHeading - this.camel.rotation.y;
             while (diff > Math.PI) diff -= Math.PI * 2;
@@ -1745,9 +1918,212 @@ const DesertGame = {
             this.groundHeight(this.camelPos.x, this.camelPos.z),
             this.camelPos.z
         );
-        // gait bob, only while actually walking
         if (d > deadzone) {
             this.camel.position.y += Math.abs(Math.sin(performance.now() * 0.008)) * 0.07;
+        }
+    },
+
+    // ---------- journey systems ----------
+
+    waterMax() {
+        return this.WATER_MAX + (this.owned.skin ? this.SKIN_BONUS : 0);
+    },
+
+    _renderMeters() {
+        const w = this.water / this.waterMax();
+        const f = this.food / this.FOOD_MAX;
+        this.dom.waterFill.style.width = (w * 100) + '%';
+        this.dom.foodFill.style.width = (f * 100) + '%';
+        this.dom.waterFill.classList.toggle('low', w < 0.25);
+        this.dom.foodFill.classList.toggle('low', f < 0.25);
+    },
+
+    _updateNav() {
+        const show = this.state === 'playing' && !!this.quest;
+        this.dom.nav.classList.toggle('hidden', !show);
+        if (!show) return;
+        const q = this.quest;
+        const dx = q.pos.x - this.pos.x, dz = q.pos.z - this.pos.z;
+        const rel = (this.yaw + Math.PI) - Math.atan2(dx, dz);
+        this.dom.compassArrow.style.transform = 'rotate(' + rel + 'rad)';
+        this.dom.navDest.textContent = q.name;
+        this.dom.navDist.textContent = Math.round(Math.hypot(dx, dz)) + ' paces';
+    },
+
+    _updateSky(dt) {
+        if (this.skyGroup) this.skyGroup.position.set(this.pos.x, 0, this.pos.z);
+        if (this.clouds) for (const cl of this.clouds) {
+            cl.position.x += cl.userData.v * dt;
+            if (cl.position.x - this.pos.x > 1700) cl.position.x -= 3400;
+            if (this.pos.x - cl.position.x > 1700) cl.position.x += 3400;
+        }
+    },
+
+    _arrive(q) {
+        this.state = 'arrived';
+        if (document.pointerLockElement === this.canvas) document.exitPointerLock();
+        this.cowries += q.reward;
+        this.completed.push(q.id);
+        this.quest = null;
+        this.dom.questBanner.classList.add('hidden');
+        this.dom.nav.classList.add('hidden');
+        this.dom.timer.classList.add('hidden');
+        this.dom.vignette.style.opacity = 0;
+        this._renderHUD();
+        this.dom.arrivalTitle.textContent = 'You reach ' + q.name;
+        this.dom.arrivalText.textContent = q.arrival;
+        this.dom.arrivalReward.textContent =
+            '+' + q.reward + ' cowries · ' + this.completed.length + ' of ' + this.QUESTS.length + ' commissions delivered';
+        this.dom.arrival.classList.remove('hidden');
+    },
+
+    _returnHome() {
+        this.dom.arrival.classList.add('hidden');
+        if (this.completed.length === this.QUESTS.length) { this._victory(); return; }
+        this.pos = { x: this.SPAWN.x, y: 0, z: this.SPAWN.z };
+        this.yaw = 0; this.pitch = -0.04;
+        this.outside = false;
+        this.exposure = 0;
+        this.water = this.waterMax();
+        this.food = this.FOOD_MAX;
+        this.camelPos = { x: this.pos.x - 3, z: this.pos.z + 3 };
+        this.state = 'playing';
+        this._renderMeters();
+        this._toast('The caravan bears you home. Timbuktu again.');
+        this._grabMouse();
+    },
+
+    _victory() {
+        this.state = 'victory';
+        if (document.pointerLockElement === this.canvas) document.exitPointerLock();
+        this.dom.victoryText.textContent =
+            'All six commissions delivered. You ride back into Timbuktu with ' +
+            this.cowries.toLocaleString() +
+            ' cowries to your name, and the scribes of Sankore write it down.';
+        this.dom.victory.classList.remove('hidden');
+    },
+
+    // ---------- distant places ----------
+
+    _buildDestinations() {
+        const salt = new THREE.MeshLambertMaterial({ color: 0xe9e4d6, map: this._adobeTexture() });
+        for (const q of this.QUESTS) {
+            const { x, z } = q.pos;
+            const gh = this.groundHeight(x, z);
+            const g = new THREE.Group();
+
+            const n = 3 + (q.reward > 400 ? 2 : 0);
+            for (let i = 0; i < n; i++) {
+                const w = 10 + (i * 7) % 12, h = 7 + (i * 5) % 9, d = 9 + (i * 3) % 8;
+                const b = new THREE.Mesh(this._taperedBox(w, h, d, 0.05),
+                    q.id === 'taghaza' ? salt : this._adobe((i % 3) * 0.02 - 0.02));
+                b.position.set(x + (i - n / 2) * 11, gh + h / 2, z + ((i * 13) % 3 - 1) * 8);
+                g.add(b);
+            }
+            const min = new THREE.Mesh(this._taperedBox(7, 14, 7, 0.06), this._adobe(0.02));
+            min.position.set(x, gh + 7, z);
+            g.add(min);
+            const cap = new THREE.Mesh(new THREE.ConeGeometry(5, 8, 4), this._adobe(0.03));
+            cap.position.set(x, gh + 17.5, z);
+            cap.rotation.y = Math.PI / 4;
+            g.add(cap);
+
+            // The guiding beacon: a pillar of light, exempt from fog so it
+            // reads across the whole erg.
+            const beam = new THREE.Mesh(
+                new THREE.CylinderGeometry(1.4, 2.6, 130, 10, 1, true),
+                new THREE.MeshBasicMaterial({
+                    color: 0xffd894, transparent: true, opacity: 0.22,
+                    blending: THREE.AdditiveBlending, depthWrite: false,
+                    fog: false, side: THREE.DoubleSide, toneMapped: false
+                })
+            );
+            beam.position.set(x, gh + 65, z);
+            g.add(beam);
+
+            const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+                map: this._makeGlowTexture(), color: 0xffe2a8, transparent: true,
+                opacity: 0.5, depthWrite: false, fog: false, toneMapped: false
+            }));
+            glow.scale.set(60, 60, 1);
+            glow.position.set(x, gh + 10, z);
+            g.add(glow);
+
+            this.scene.add(g);
+            this._sign(q.name, x, gh + 22, z);
+            const rec = this.labels[this.labels.length - 1];
+            rec.fadeStart = 300; rec.fadeEnd = 1000;
+        }
+    },
+
+    _addOases() {
+        this.oases = [
+            { name: 'Araouane Oasis', x: 0,    z: -430, r: 12 },
+            { name: 'Bir el-Ksaib',   x: -250, z: -250, r: 12 },
+            { name: 'Tosaye Wells',   x: 300,  z: 0,    r: 12 },
+            { name: 'Douentza Wells', x: -180, z: 180,  r: 12 },
+            { name: 'Bura Wells',     x: 0,    z: 420,  r: 12 }
+        ];
+        const trunkMat = new THREE.MeshLambertMaterial({ color: 0x7a5a34 });
+        const frondMat = new THREE.MeshLambertMaterial({ color: 0x3f6b2a, side: THREE.DoubleSide });
+
+        for (const o of this.oases) {
+            let gh = this.groundHeight(o.x, o.z);
+            for (const [ox, oz] of [[6, 0], [-6, 0], [0, 6], [0, -6]]) {
+                gh = Math.max(gh, this.groundHeight(o.x + ox, o.z + oz));
+            }
+
+            const water = new THREE.Mesh(
+                new THREE.CircleGeometry(6.5, 26),
+                new THREE.MeshLambertMaterial({ color: 0x2f8fae, transparent: true, opacity: 0.92 })
+            );
+            water.rotation.x = -Math.PI / 2;
+            water.position.set(o.x, gh + 0.45, o.z);
+            this.scene.add(water);
+
+            const rim = new THREE.Mesh(new THREE.TorusGeometry(6.6, 0.5, 6, 26),
+                new THREE.MeshLambertMaterial({ color: 0xbfa06a }));
+            rim.rotation.x = Math.PI / 2;
+            rim.position.set(o.x, gh + 0.4, o.z);
+            this.scene.add(rim);
+
+            for (let i = 0; i < 5; i++) {
+                const a = (i / 5) * Math.PI * 2 + o.x;
+                const px = o.x + Math.cos(a) * 8.5, pz = o.z + Math.sin(a) * 8.5;
+                const pgh = this.groundHeight(px, pz);
+                const h = 5 + (i % 3);
+                const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.34, h, 6), trunkMat);
+                trunk.position.set(px, pgh + h / 2, pz);
+                this.scene.add(trunk);
+                for (let k = 0; k < 6; k++) {
+                    const fa = (k / 6) * Math.PI * 2;
+                    const f = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 0.8), frondMat);
+                    f.position.set(px + Math.cos(fa) * 1.4, pgh + h + 0.2, pz + Math.sin(fa) * 1.4);
+                    f.rotation.set(-0.5, -fa, 0.25);
+                    this.scene.add(f);
+                }
+            }
+
+            this._sign(o.name, o.x, gh + 8, o.z);
+            const rec = this.labels[this.labels.length - 1];
+            rec.fadeStart = 90; rec.fadeEnd = 260;
+        }
+    },
+
+    _addClouds() {
+        this.clouds = [];
+        for (let i = 0; i < 9; i++) {
+            const s = new THREE.Sprite(new THREE.SpriteMaterial({
+                map: this._makeGlowTexture(), color: 0xfff4e2,
+                transparent: true, opacity: 0.16 + (i % 3) * 0.05,
+                depthWrite: false, fog: false, toneMapped: false
+            }));
+            const w = 220 + (i * 47) % 160;
+            s.scale.set(w, w * 0.32, 1);
+            s.position.set((i * 397) % 2600 - 1300, 150 + (i * 31) % 60, (i * 613) % 2600 - 1300);
+            s.userData.v = 1.2 + (i % 4) * 0.5;
+            this.scene.add(s);
+            this.clouds.push(s);
         }
     },
 
