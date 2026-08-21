@@ -9,7 +9,7 @@
 // the same renderer, and the whole game ships without an image file.
 
 const Iliad = {
-    W: 384, H: 216,          // SNES-ish internal resolution, integer-scaled up
+    W: 640, H: 360,          // internal resolution, integer-scaled up to fit
 
     // Might overwhelms Guile · Guile undoes Spirit · Spirit breaks Might
     TYPES: {
@@ -344,6 +344,7 @@ const Iliad = {
                 defender.hp = Math.max(0, defender.hp - r.dmg);
                 if (side === 'hero') this.foePose = 'hurt'; else this.heroPose = 'hurt';
                 this.shake = 1;
+                this.hitAt(side === 'hero' ? 'foe' : 'hero');
                 this.say(r.eff > 1 ? `A telling blow — ${r.dmg}!` : r.eff < 1 ? `Turned aside — only ${r.dmg}.` : `${r.dmg} damage.`);
                 if (move.effect === 'recoil') {
                     const self = Math.round(r.dmg * 0.22);
@@ -500,7 +501,7 @@ const Iliad = {
             <div class="il-heroes">
                 ${this.ROSTER.map(h => `
                     <button class="il-hero" data-hero="${h.id}">
-                        <canvas width="96" height="120" data-portrait="${h.id}"></canvas>
+                        <canvas width="132" height="186" data-portrait="${h.id}"></canvas>
                         <span class="il-hero-name">${h.name}</span>
                         <span class="il-hero-ep">${this.esc(h.epithet)}</span>
                         <span class="il-hero-god">${this.esc(h.patron)}</span>
@@ -617,33 +618,37 @@ const Iliad = {
             const h = this.ROSTER.find(x => x.id === cv.dataset.portrait);
             const c = cv.getContext('2d');
             c.imageSmoothingEnabled = false;
-            c.save(); c.scale(1.7, 1.7);
-            this.drawWarrior(c, h.palette, 'ready', 1, 28, 68, 0);
-            c.restore();
+            this.drawWarrior(c, h.palette, 'ready', 1, 64, 182, 0, null, { scale: 0.95, id: h.name });
         });
     },
 
     // ---------- rendering ----------
     //
-    // One renderer, many poses. Each warrior is drawn from parts whose offsets
-    // and angles come from the pose table, so a new stance costs a few numbers
-    // rather than a new sprite sheet.
+    // Nothing here loads an image. Warriors are assembled from parts whose
+    // offsets and angles come from the pose table; the backdrops are cached
+    // procedural layers scrolled at different rates; and the lighting is done
+    // with composite operations rather than shaders — a rim light subtracted
+    // from the real silhouette, a cool bounce on the shadow side, and a bloom
+    // pass that only bright pixels survive.
+
+    HORIZON: 186,            // where the ground plane meets the sky
+    SUN: [548, 58],          // key light; everything else is lit to agree with it
 
     POSES: {
-        ready:  { lean: 0,   armF:-0.5, armB: 0.4, spear:-0.35, shield: 0,  bob: 1,   knee: 0 },
-        attack: { lean: 0.22,armF:-1.5, armB: 0.9, spear:-1.45, shield: 3,  bob: 0,   knee: 3 },
-        cast:   { lean:-0.12,armF:-2.4, armB:-2.1, spear:-2.5,  shield:-2,  bob: 2,   knee: 0 },
-        hurt:   { lean:-0.3, armF: 0.5, armB: 0.8, spear: 0.6,  shield: 4,  bob: 0,   knee: 2 },
-        win:    { lean:-0.05,armF:-2.2, armB: 0.2, spear:-2.2,  shield:-1,  bob: 1.5, knee: 0 },
-        fallen: { lean: 1.35,armF: 1.2, armB: 1.0, spear: 1.4,  shield: 6,  bob: 0,   knee: 8 }
+        ready:  { lean: 0,    armF:-0.5, armB: 0.4, spear:-0.35, shield: 0,  bob: 1,   knee: 0 },
+        attack: { lean: 0.24, armF:-1.5, armB: 0.9, spear:-1.45, shield: 5,  bob: 0,   knee: 5 },
+        cast:   { lean:-0.14, armF:-2.4, armB:-2.1, spear:-2.5,  shield:-4,  bob: 2,   knee: 0 },
+        hurt:   { lean:-0.32, armF: 0.5, armB: 0.8, spear: 0.6,  shield: 7,  bob: 0,   knee: 4 },
+        win:    { lean:-0.06, armF:-2.2, armB: 0.2, spear:-2.2,  shield:-2,  bob: 1.5, knee: 0 },
+        fallen: { lean: 1.35, armF: 1.2, armB: 1.0, spear: 1.4,  shield:10,  bob: 0,   knee:13 }
     },
 
     // ---------- colour ----------
     //
-    // Flat fills read as plastic. Every material instead gets a five-step
+    // Flat fills read as plastic. Every material instead gets a seven-step
     // ramp whose shadows drift toward blue and whose highlights drift toward
-    // warm yellow — the hue shift is what makes bronze look like bronze
-    // rather than a brown rectangle. Ramps are cached; this is not per-frame.
+    // warm yellow — the hue shift is what makes bronze look like bronze rather
+    // than a brown rectangle. Ramps are cached; this is not per-frame work.
 
     _rampCache: {},
 
@@ -693,16 +698,31 @@ const Iliad = {
     ramp(hex) {
         if (this._rampCache[hex]) return this._rampCache[hex];
         const [h, s, l] = this._hexToHsl(hex);
-        const cool = 250, warm = 50;     // shadow anchor, highlight anchor
+        const cool = 250, warm = 48;     // shadow anchor, highlight anchor
         const r = {
+            sh3:  this._hslToHex(this._toward(h, cool, 22), Math.min(1, s * 1.30 + 0.06), Math.max(0.04, l * 0.34)),
             sh2:  this._hslToHex(this._toward(h, cool, 16), Math.min(1, s * 1.22 + 0.04), Math.max(0.05, l * 0.52)),
             sh1:  this._hslToHex(this._toward(h, cool, 8),  Math.min(1, s * 1.10 + 0.02), Math.max(0.08, l * 0.76)),
             base: hex,
             li1:  this._hslToHex(this._toward(h, warm, 7),  s * 0.94, Math.min(0.93, l * 1.13 + 0.04)),
-            li2:  this._hslToHex(this._toward(h, warm, 13), s * 0.82, Math.min(0.96, l * 1.24 + 0.09))
+            li2:  this._hslToHex(this._toward(h, warm, 13), s * 0.82, Math.min(0.96, l * 1.24 + 0.09)),
+            li3:  this._hslToHex(this._toward(h, warm, 20), s * 0.62, Math.min(0.99, l * 1.38 + 0.18))
         };
         this._rampCache[hex] = r;
         return r;
+    },
+
+    _rgba(hex, a) {
+        const n = parseInt(hex.slice(1), 16);
+        return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+    },
+
+    // Blend two hex colours. Used for atmospheric haze, where distant things
+    // are pulled toward the colour of the air between us and them.
+    _mix(a, b, t) {
+        const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
+        const f = (sh) => Math.round((((pa >> sh) & 255) * (1 - t) + ((pb >> sh) & 255) * t));
+        return '#' + [16, 8, 0].map(sh => f(sh).toString(16).padStart(2, '0')).join('');
     },
 
     // ---------- parts ----------
@@ -710,37 +730,291 @@ const Iliad = {
     // The key light sits upper-right with the sun, so every rounded form is
     // lit on its right and falls to core shadow on its left.
 
-    // A limb: a rotated capsule shaded across its width.
+    // A limb: a rotated capsule banded across its width, dark at the far end
+    // so knees, elbows and ankles read as joints rather than as tube ends.
     _limb(ctx, x, y, w, len, angle, hex) {
-        const R = this.ramp(hex);
+        const R = this.ramp(hex), hw = w / 2;
         ctx.save();
         ctx.translate(x, y);
         ctx.rotate(angle);
-        ctx.fillStyle = R.sh1;  ctx.fillRect(-w / 2, 0, w, len);
-        ctx.fillStyle = R.base; ctx.fillRect(-w / 2 + 1, 0, w - 1, len);
-        ctx.fillStyle = R.li1;  ctx.fillRect(w / 2 - 2, 1, 1, len - 2);
-        ctx.fillStyle = R.sh2;  ctx.fillRect(-w / 2, len - 2, w, 2);
+        ctx.fillStyle = R.sh2;  ctx.fillRect(-hw, 0, w, len);
+        ctx.fillStyle = R.sh1;  ctx.fillRect(-hw + 1, 0, w - 2, len);
+        ctx.fillStyle = R.base; ctx.fillRect(-hw + 2, 0, w - 4, len);
+        ctx.fillStyle = R.li1;  ctx.fillRect(hw - 4, 2, 2, len - 5);
+        ctx.fillStyle = R.li2;  ctx.fillRect(hw - 4, 3, 1, Math.max(0, len - 9));
+        ctx.fillStyle = R.sh3;  ctx.fillRect(-hw, len - 3, w, 3);
         ctx.restore();
     },
 
     // A slab shaded as a cylinder: shadow edge, body, light band, rim.
     _slab(ctx, x, y, w, h, hex, opts = {}) {
         const R = this.ramp(hex);
-        ctx.fillStyle = R.sh1;  ctx.fillRect(x, y, w, h);
-        ctx.fillStyle = R.base; ctx.fillRect(x + 1, y, w - 1, h - 1);
+        ctx.fillStyle = R.sh2;  ctx.fillRect(x, y, w, h);
+        ctx.fillStyle = R.sh1;  ctx.fillRect(x + 1, y, w - 2, h);
+        ctx.fillStyle = R.base; ctx.fillRect(x + 2, y, w - 3, h - 1);
         if (!opts.flat) {
-            ctx.fillStyle = R.li1; ctx.fillRect(x + w - 3, y + 1, 2, h - 2);
-            ctx.fillStyle = R.sh2; ctx.fillRect(x, y + h - 2, w, 2);
+            ctx.fillStyle = R.li1; ctx.fillRect(x + w - 5, y + 1, 3, h - 3);
+            ctx.fillStyle = R.li2; ctx.fillRect(x + w - 4, y + 2, 1, h - 5);
+            ctx.fillStyle = R.sh3; ctx.fillRect(x, y + h - 3, w, 3);
         }
-        if (opts.top) { ctx.fillStyle = R.li2; ctx.fillRect(x + 1, y, w - 2, 1); }
+        if (opts.top) { ctx.fillStyle = R.li3; ctx.fillRect(x + 2, y, w - 4, 1); }
+    },
+
+    // The sculpted bronze cuirass: shoulders wide, waist drawn in, with
+    // pectorals and a run of abdominal ridges cut into it. Greek muscle armour
+    // was literally an idealised torso in metal, so the highlights follow
+    // anatomy rather than the rectangle.
+    _cuirass(b, pal, shoulderY, hipY) {
+        const A = this.ramp(pal.armour), T = this.ramp(pal.trim);
+        const top = shoulderY, bot = hipY + 5;
+        const SW = 17, WW = 12;                       // half-widths: shoulder, waist
+        const plate = (i, style) => {
+            b.fillStyle = style;
+            b.beginPath();
+            b.moveTo(-SW + i, top + i);
+            b.lineTo(SW - i,  top + i);
+            b.quadraticCurveTo(SW - i, top + (bot - top) * 0.55, WW - i, bot - i);
+            b.lineTo(-WW + i, bot - i);
+            b.quadraticCurveTo(-SW + i, top + (bot - top) * 0.55, -SW + i, top + i);
+            b.closePath(); b.fill();
+        };
+        plate(0, A.sh2);
+        plate(1, A.sh1);
+        plate(2, A.base);
+
+        // pectorals — two domes just under the collar
+        const pecY = top + 11;
+        for (const sx of [-7.5, 7.5]) {
+            b.fillStyle = A.sh1;
+            b.beginPath(); b.ellipse(sx, pecY, 7.5, 5.5, 0, 0, Math.PI * 2); b.fill();
+            b.fillStyle = A.base;
+            b.beginPath(); b.ellipse(sx + 1, pecY - 1, 6.5, 4.5, 0, 0, Math.PI * 2); b.fill();
+        }
+        b.fillStyle = A.li1;
+        b.beginPath(); b.ellipse(9, pecY - 2, 3.5, 2.4, 0, 0, Math.PI * 2); b.fill();
+        b.fillStyle = A.sh2; b.fillRect(-1, top + 6, 2, 12);        // sternum
+        b.fillStyle = A.sh2; b.fillRect(-15, top + 7, 4, 20);       // core shadow, off-light side
+
+        // abdominal ridges, narrowing as they run down to the waist
+        for (let i = 0; i < 4; i++) {
+            const y = pecY + 8 + i * 6;
+            const w = 10 - i * 1.4;
+            b.fillStyle = A.sh2; b.fillRect(-w, y, w * 2, 1.4);
+            b.fillStyle = A.li1; b.fillRect(-w + 1, y + 1.6, w * 2 - 2, 1);
+        }
+
+        // specular running down the lit edge, brightest where the form turns
+        b.fillStyle = A.li2; b.fillRect(11, top + 5, 3, bot - top - 14);
+        b.fillStyle = A.li3; b.fillRect(12, top + 8, 1, bot - top - 22);
+
+        // collar and waist trim
+        b.fillStyle = T.sh1;  b.fillRect(-SW, top, SW * 2, 4);
+        b.fillStyle = T.base; b.fillRect(-SW, top, SW * 2, 3);
+        b.fillStyle = T.li2;  b.fillRect(-SW + 1, top, SW * 2 - 2, 1);
+        b.fillStyle = T.base; b.fillRect(-WW - 1, bot - 4, WW * 2 + 2, 4);
+        b.fillStyle = T.li1;  b.fillRect(-WW - 1, bot - 4, WW * 2 + 2, 1);
+    },
+
+    // Pteruges: the skirt of stiffened leather strips that hangs from the
+    // cuirass. They swing a little behind the body, which sells the weight.
+    _pteruges(b, pal, hipY, t, swing) {
+        const L = this.ramp(pal.tunic);
+        for (let i = 0; i < 7; i++) {
+            const u = (i - 3) / 3;
+            const x = -13 + i * 3.8;
+            const lag = swing * (1 + u * 0.4) + Math.sin(t * 2.1 + i * 0.7) * 0.8;
+            const len = 17 - Math.abs(u) * 3.5;
+            b.fillStyle = L.sh2;  b.fillRect(x, hipY + 1, 4, len);
+            b.fillStyle = L.base; b.fillRect(x + lag * 0.25, hipY + 1, 3, len - 1);
+            b.fillStyle = L.li1;  b.fillRect(x + lag * 0.25 + 2, hipY + 2, 1, len - 5);
+            b.fillStyle = L.sh3;  b.fillRect(x + lag * 0.3, hipY + len, 3, 2);
+        }
+    },
+
+    // A Corinthian helmet: full dome, nasal bar, cheek pieces, and the narrow
+    // eye slots that are the whole reason the thing is so recognisable. It is
+    // deliberately close to the skull — an oversized helmet is what makes a
+    // heroic figure read as a bobblehead.
+    _helmet(b, pal, headY) {
+        const A = this.ramp(pal.armour), T = this.ramp(pal.trim);
+        const cy = headY + 2;                          // dome centre
+        b.fillStyle = A.sh2;
+        b.beginPath(); b.arc(0, cy, 9.5, Math.PI, 0); b.fill();
+        b.fillRect(-9.5, cy, 19, 8);
+        b.fillStyle = A.sh1;
+        b.beginPath(); b.arc(0.5, cy - 0.5, 8.5, Math.PI, 0); b.fill();
+        b.fillRect(-8.5, cy, 17, 7);
+        b.fillStyle = A.base;
+        b.beginPath(); b.arc(1, cy - 1, 7.5, Math.PI, 0); b.fill();
+        b.fillRect(-7, cy, 15, 6);
+
+        // cheek pieces sweep down past the jaw, leaving the face open between
+        b.fillStyle = A.sh1;  b.fillRect(-9.5, cy + 3, 4, 11);
+        b.fillStyle = A.base; b.fillRect(-9, cy + 3, 3, 10);
+        b.fillStyle = A.sh1;  b.fillRect(5.5, cy + 3, 4, 11);
+        b.fillStyle = A.base; b.fillRect(5.5, cy + 3, 3, 10);
+        b.fillStyle = A.li1;  b.fillRect(8, cy + 4, 1, 8);
+        b.fillStyle = A.sh2;  b.fillRect(-9.5, cy + 12, 4, 2);
+        b.fillStyle = A.sh2;  b.fillRect(5.5, cy + 12, 4, 2);
+
+        b.fillStyle = A.sh1;  b.fillRect(-1.5, cy + 3, 3, 10);      // nasal bar
+        b.fillStyle = A.base; b.fillRect(-1, cy + 3, 2, 9);
+        b.fillStyle = A.li1;  b.fillRect(0.5, cy + 4, 0.6, 7);
+
+        // brow shadow, then the eye slots with one catchlight so there is
+        // somebody inside the bronze
+        b.fillStyle = 'rgba(18,10,24,0.5)'; b.fillRect(-6, cy + 2, 12, 2);
+        b.fillStyle = '#120c18';
+        b.fillRect(-5, cy + 4, 3.2, 2.6);
+        b.fillRect(1.8, cy + 4, 3.2, 2.6);
+        b.fillStyle = 'rgba(255,236,190,0.7)';  b.fillRect(3.6, cy + 4, 1, 1);
+        b.fillStyle = 'rgba(255,236,190,0.38)'; b.fillRect(-3.2, cy + 4, 1, 1);
+
+        // dome highlight and the trim band the crest is socketed into
+        b.fillStyle = A.li2;
+        b.beginPath(); b.arc(2.5, cy - 2.5, 4.5, Math.PI * 1.12, Math.PI * 1.76);
+        b.lineTo(2.5, cy - 2.5); b.fill();
+        b.fillStyle = A.li3; b.fillRect(3, cy - 7, 1.4, 3);
+        b.fillStyle = T.base; b.fillRect(-9.5, cy + 1, 19, 1.6);
+        b.fillStyle = T.li2;  b.fillRect(-9.5, cy + 1, 19, 0.8);
+        return cy;
+    },
+
+    // Horsehair crest: an arcing plume rooted on the dome, drawn as a solid
+    // banded shape with strands combed over it. Drawing it as strands alone
+    // just filled in to a slab; the shape has to come first, texture second.
+    _crest(b, pal, cy, t, lagX) {
+        // Horsehair was dyed, so the plume takes its colour from the fighter's
+        // cloak rather than staying the pale bone of the helmet trim — which
+        // also stops it washing out to white under the rim light.
+        const C = this.ramp(this._mix(pal.crest, pal.cape, 0.42));
+        const sway = lagX * 26;
+        // spine of the plume: brow -> up over the dome -> down past the nape
+        const pt = u => {
+            const x = 7 - u * 27 + sway * u * u;
+            const y = cy - 8 - Math.sin(Math.min(1, u * 0.94) * Math.PI * 0.98) * 25 + u * u * 16;
+            return [x, y];
+        };
+        const thick = u => 4 + Math.sin(Math.min(1, u * 1.15) * Math.PI) * 8;
+
+        const band = (off, style) => {
+            b.fillStyle = style;
+            b.beginPath();
+            for (let i = 0; i <= 22; i++) {
+                const u = i / 22, [x, y] = pt(u);
+                if (i === 0) b.moveTo(x, y + off); else b.lineTo(x, y + off);
+            }
+            for (let i = 22; i >= 0; i--) {
+                const u = i / 22, [x, y] = pt(u);
+                b.lineTo(x, y + off + thick(u));
+            }
+            b.closePath(); b.fill();
+        };
+        band(0, C.sh1);
+        band(-0.5, C.base);
+
+        // combed strands: short ticks along the plume, lagging at the tail
+        for (let i = 0; i < 30; i++) {
+            const u = i / 29;
+            const [x, y] = pt(u);
+            const drift = Math.sin(t * 3.4 + u * 4.2) * (0.4 + u * 1.6);
+            const th = thick(u);
+            b.fillStyle = i % 3 === 0 ? C.li2 : i % 3 === 1 ? C.li1 : C.sh2;
+            b.fillRect(x + drift, y + th * 0.15, 1.1, th * 0.8);
+        }
+        // lit crown along the top of the arc
+        b.fillStyle = C.li3;
+        for (let i = 4; i < 16; i++) {
+            const u = i / 29, [x, y] = pt(u);
+            b.fillRect(x, y - 0.4, 1.2, 1.4);
+        }
+    },
+
+    // The hoplon, with a device on the face. Which device is decided by the
+    // owner's name, so every fighter keeps the same shield every run.
+    _hoplon(b, pal, cx, cy, id) {
+        const S = this.ramp(pal.shield), T = this.ramp(pal.trim);
+        const r = 16;
+        b.fillStyle = S.sh2; b.beginPath(); b.arc(cx, cy, r, 0, Math.PI * 2); b.fill();
+        b.fillStyle = S.sh1; b.beginPath(); b.arc(cx + 1, cy - 1, r - 1.5, 0, Math.PI * 2); b.fill();
+        b.fillStyle = S.base; b.beginPath(); b.arc(cx + 1.5, cy - 1.5, r - 4, 0, Math.PI * 2); b.fill();
+
+        // the device, clipped to the face so nothing spills over the rim
+        b.save();
+        b.beginPath(); b.arc(cx + 1.5, cy - 1.5, r - 5, 0, Math.PI * 2); b.clip();
+        this._blazon(b, cx + 1, cy - 1, r - 5, pal, id);
+        b.restore();
+
+        // bronze rim, then the broad curved highlight of a domed face
+        b.strokeStyle = T.base; b.lineWidth = 2.5;
+        b.beginPath(); b.arc(cx, cy, r - 1, 0, Math.PI * 2); b.stroke();
+        b.strokeStyle = T.li2; b.lineWidth = 1;
+        b.beginPath(); b.arc(cx + 1, cy - 1, r - 1.5, Math.PI * 1.15, Math.PI * 1.8); b.stroke();
+        b.fillStyle = 'rgba(255,244,214,0.16)';
+        b.beginPath(); b.ellipse(cx + 5, cy - 6, 8, 5, -0.5, 0, Math.PI * 2); b.fill();
+        b.fillStyle = 'rgba(30,20,40,0.22)';
+        b.beginPath(); b.arc(cx - 6, cy + 6, 8, 0, Math.PI * 2); b.fill();
+    },
+
+    _blazon(b, cx, cy, r, pal, id) {
+        const T = this.ramp(pal.trim), D = this.ramp(pal.armour);
+        let hsh = 0;
+        for (const ch of (id || 'x')) hsh = (hsh * 31 + ch.charCodeAt(0)) | 0;
+        const kind = Math.abs(hsh) % 6;
+        b.fillStyle = D.sh3;
+        const dot = (x, y, w, h) => b.fillRect(cx + x, cy + y, w, h);
+
+        if (kind === 0) {                     // gorgoneion — the classic
+            b.beginPath(); b.arc(cx, cy, r * 0.52, 0, Math.PI * 2); b.fill();
+            b.fillStyle = T.li1;
+            for (let i = 0; i < 10; i++) {    // snakes
+                const a = (i / 10) * Math.PI * 2;
+                b.fillRect(cx + Math.cos(a) * r * 0.68 - 1, cy + Math.sin(a) * r * 0.68 - 1, 3, 3);
+            }
+            b.fillStyle = T.base; dot(-4, -3, 3, 3); dot(2, -3, 3, 3);
+            b.fillRect(cx - 3, cy + 3, 7, 2);
+        } else if (kind === 1) {              // lion rampant, blocked in
+            b.fillRect(cx - 7, cy - 2, 12, 8);
+            b.fillRect(cx - 9, cy - 8, 8, 8);
+            b.fillRect(cx + 4, cy - 6, 4, 10);
+            b.fillStyle = T.base; b.fillRect(cx - 11, cy - 10, 4, 4);
+        } else if (kind === 2) {              // eagle displayed
+            b.fillRect(cx - 2, cy - 8, 4, 14);
+            b.beginPath();
+            b.moveTo(cx - 2, cy - 5); b.lineTo(cx - r * 0.9, cy + 1);
+            b.lineTo(cx - 2, cy + 3); b.closePath(); b.fill();
+            b.beginPath();
+            b.moveTo(cx + 2, cy - 5); b.lineTo(cx + r * 0.9, cy + 1);
+            b.lineTo(cx + 2, cy + 3); b.closePath(); b.fill();
+        } else if (kind === 3) {              // running waves
+            for (let i = 0; i < 4; i++) {
+                b.beginPath();
+                b.arc(cx - 8 + i * 6, cy - 6 + i * 4, 5, Math.PI, 0);
+                b.lineWidth = 2; b.strokeStyle = D.sh3; b.stroke();
+            }
+        } else if (kind === 4) {              // eight-rayed star
+            for (let i = 0; i < 8; i++) {
+                const a = (i / 8) * Math.PI * 2;
+                b.save(); b.translate(cx, cy); b.rotate(a);
+                b.fillRect(-1.5, -r * 0.85, 3, r * 0.85); b.restore();
+            }
+            b.fillStyle = T.li1; b.beginPath(); b.arc(cx, cy, 3, 0, Math.PI * 2); b.fill();
+        } else {                              // boar
+            b.fillRect(cx - 8, cy - 3, 15, 8);
+            b.fillRect(cx + 5, cy - 6, 6, 7);
+            b.fillStyle = T.li1;
+            b.fillRect(cx + 10, cy - 3, 4, 2);
+            b.fillStyle = D.sh3;
+            b.fillRect(cx - 9, cy + 5, 3, 4); b.fillRect(cx + 3, cy + 5, 3, 4);
+        }
     },
 
     // ---------- pose state ----------
     //
     // Poses used to snap. Each fighter now carries an interpolated pose that
-    // eases toward the target, plus springs for the cape and crest so they
-    // lag the body and settle after it stops — the secondary motion is most
-    // of what separates "puppet" from "alive".
+    // eases toward the target, plus springs for the cape and crest so they lag
+    // the body and settle after it stops — that secondary motion is most of
+    // what separates "puppet" from "alive".
 
     _poseState(key) {
         if (!this._poses) this._poses = {};
@@ -760,7 +1034,6 @@ const Iliad = {
         for (const p of ['lean','armF','armB','spear','shield','bob','knee']) {
             st[p] += (T[p] - st[p]) * k;
         }
-        // cape and crest chase the body with a damped spring
         const drive = (st.lean - st.prevLean) * 90;
         st.prevLean = st.lean;
         st.capeV  += (-st.capeX * 46 - st.capeV * 7.5 - drive * 1.6) * dt;
@@ -770,20 +1043,27 @@ const Iliad = {
         return st;
     },
 
-    drawWarrior(ctx, pal, poseName, facing, cx, groundY, t, key) {
+    drawWarrior(ctx, pal, poseName, facing, cx, groundY, t, key, opts = {}) {
         const P = key ? this._advancePose(key, poseName, this._dt || 0.016)
                       : { ...(this.POSES[poseName] || this.POSES.ready), capeX: 0, crestX: 0 };
+        const id = opts.id || key || 'x';
 
         // Render to a buffer so the rim light can be derived from the real
         // silhouette rather than guessed per part.
-        const BW = 96, BH = 110, ox = 48, oy = 96;
+        // Sized to the measured union of every settled pose, plus room for the
+        // outline dilation. The fallen pose reaches 156 left of the feet and 49
+        // below them; the raised spear of `win` reaches 185 above.
+        const BW = 250, BH = 248, ox = 160, oy = 190;
         if (!this._buf) {
-            this._buf = document.createElement('canvas');
-            this._buf.width = BW; this._buf.height = BH;
-            this._bufCtx = this._buf.getContext('2d');
-            this._rim = document.createElement('canvas');
-            this._rim.width = BW; this._rim.height = BH;
-            this._rimCtx = this._rim.getContext('2d');
+            const mk = () => {
+                const c = document.createElement('canvas');
+                c.width = BW; c.height = BH;
+                return c;
+            };
+            this._buf = mk(); this._bufCtx = this._buf.getContext('2d');
+            this._rim = mk(); this._rimCtx = this._rim.getContext('2d');
+            this._bounce = mk();
+            this._outline = mk();
         }
         const b = this._bufCtx;
         b.clearRect(0, 0, BW, BH);
@@ -792,113 +1072,145 @@ const Iliad = {
         b.translate(ox, oy);
 
         const fallen = poseName === 'fallen';
-        if (fallen) { b.rotate(-P.lean); b.translate(-6, 6); }
+        if (fallen) { b.rotate(-P.lean); b.translate(-10, 10); }
         else b.rotate(P.lean * 0.12);
 
-        const breathe = Math.sin(t * 2.4) * P.bob * 0.5;
-        const hipY = -26 + breathe;
-        const shoulderY = -44 + breathe;
+        // Proportions, ground at y=0. A heroic figure is about seven and a
+        // half heads tall; the first pass here was three and a half, which is
+        // why it read as a toy. Every landmark below is derived from that.
+        const breathe = Math.sin(t * 2.4) * P.bob * 0.8;
+        const hipY = -68 + breathe;
+        const shoulderY = -110 + breathe;
+        const headY = -128 + breathe;          // top of the skull
+        const swing = P.capeX * 18;
 
-        // cape: silhouette driven by the spring, not a fixed sine
+        // ---- cape, behind everything ----
         const capeR = this.ramp(pal.cape);
-        const sway = Math.sin(t * 1.7) * 1.6 + P.capeX * 26;
+        const sway = Math.sin(t * 1.7) * 2.6 + P.capeX * 42;
+        const capeTop = shoulderY + 4;
+        const hem = -16;                        // falls to mid-calf
+        b.fillStyle = capeR.sh2;
+        b.beginPath();
+        b.moveTo(-6, capeTop);
+        b.quadraticCurveTo(-22 - sway, hipY - 10, -27 - sway * 1.3, hem);
+        b.lineTo(-4 - sway * 0.5, hem + 4);
+        b.quadraticCurveTo(-3, hipY - 10, 4, capeTop + 2);
+        b.closePath(); b.fill();
         b.fillStyle = capeR.sh1;
         b.beginPath();
-        b.moveTo(-3, shoulderY + 2);
-        b.lineTo(-14 - sway, hipY + 11);
-        b.lineTo(-5 - sway * 0.5, hipY + 13);
-        b.lineTo(2, shoulderY + 4);
+        b.moveTo(-6, capeTop + 1);
+        b.quadraticCurveTo(-19 - sway * 0.85, hipY - 10, -23 - sway * 1.1, hem - 3);
+        b.lineTo(-6 - sway * 0.45, hem);
+        b.quadraticCurveTo(-3, hipY - 10, 3, capeTop + 3);
         b.closePath(); b.fill();
-        b.fillStyle = capeR.base;
-        b.beginPath();
-        b.moveTo(-3, shoulderY + 3);
-        b.lineTo(-11 - sway * 0.8, hipY + 9);
-        b.lineTo(-5 - sway * 0.4, hipY + 11);
-        b.lineTo(1, shoulderY + 4);
-        b.closePath(); b.fill();
-
-        // legs
-        this._limb(b, -4, hipY, 6, 24 - P.knee, 0.10 + P.knee * 0.03, pal.skin);
-        this._limb(b,  4, hipY, 6, 24 - P.knee, -0.14 - P.knee * 0.02, pal.skin);
-        this._slab(b, -7, hipY + 15, 6, 5, pal.metal);
-        this._slab(b,  2, hipY + 15, 6, 5, pal.metal);
-
-        // tunic
-        this._slab(b, -9, hipY - 2, 18, 10, pal.tunic);
-        const tunR = this.ramp(pal.tunic);
-        b.fillStyle = tunR.sh2;
-        for (let i = 0; i < 4; i++) b.fillRect(-7 + i * 4, hipY + 1, 1, 7);   // folds
-
-        // cuirass
-        this._slab(b, -9, shoulderY, 18, 20, pal.armour, { top: true });
-        const armR = this.ramp(pal.armour), trimR = this.ramp(pal.trim);
-        b.fillStyle = trimR.base; b.fillRect(-9, shoulderY, 18, 2);
-        b.fillStyle = trimR.li1;  b.fillRect(-9, shoulderY, 18, 1);
-        b.fillStyle = trimR.base; b.fillRect(-9, shoulderY + 17, 18, 3);
-        b.fillStyle = armR.li2;   b.fillRect(4, shoulderY + 4, 2, 11);        // specular
-        b.fillStyle = armR.sh2;   b.fillRect(-8, shoulderY + 5, 3, 10);       // core shadow
-        b.fillStyle = armR.sh1;   b.fillRect(-2, shoulderY + 6, 3, 8);        // pectoral line
-
-        // back arm + hoplon
-        this._limb(b, -7, shoulderY + 4, 5, 15, P.armB, pal.skin);
-        const shx = -13 - P.shield, shy = shoulderY + 6, shR = this.ramp(pal.shield);
-        b.fillStyle = shR.sh1; b.beginPath(); b.arc(shx, shy, 11, 0, Math.PI * 2); b.fill();
-        b.fillStyle = shR.base; b.beginPath(); b.arc(shx + 0.5, shy - 0.5, 10, 0, Math.PI * 2); b.fill();
-        b.fillStyle = shR.li1; b.beginPath(); b.arc(shx + 2, shy - 2, 6.5, 0, Math.PI * 2); b.fill();
-        b.fillStyle = shR.li2; b.beginPath(); b.arc(shx + 3, shy - 3, 3, 0, Math.PI * 2); b.fill();
-        b.strokeStyle = trimR.base; b.lineWidth = 1.5;
-        b.beginPath(); b.arc(shx, shy, 10.5, 0, Math.PI * 2); b.stroke();
-        b.fillStyle = shR.sh2; b.beginPath(); b.arc(shx - 1, shy + 1, 3, 0, Math.PI * 2); b.fill();
-
-        // front arm + spear
-        this._limb(b, 7, shoulderY + 4, 5, 14, P.armF, pal.skin);
-        b.save();
-        b.translate(9, shoulderY + 6);
-        b.rotate(P.spear);
-        const shaft = this.ramp('#7a5a34'), tip = this.ramp(pal.metal);
-        b.fillStyle = shaft.sh1;  b.fillRect(-1.5, -30, 3, 46);
-        b.fillStyle = shaft.base; b.fillRect(-1.5, -30, 2, 46);
-        b.fillStyle = tip.sh1;
-        b.beginPath(); b.moveTo(0, -39); b.lineTo(4.5, -28); b.lineTo(-4.5, -28); b.closePath(); b.fill();
-        b.fillStyle = tip.li2;
-        b.beginPath(); b.moveTo(0, -37); b.lineTo(2, -29); b.lineTo(-0.5, -29); b.closePath(); b.fill();
-        b.restore();
-
-        // head
-        const skinR = this.ramp(pal.skin);
-        b.fillStyle = skinR.sh1;  b.fillRect(-5, shoulderY - 11, 10, 11);
-        b.fillStyle = skinR.base; b.fillRect(-5, shoulderY - 11, 8, 11);
-        b.fillStyle = skinR.li1;  b.fillRect(1, shoulderY - 10, 2, 6);
-
-        // helmet
-        b.fillStyle = armR.sh1;  b.fillRect(-6, shoulderY - 15, 12, 8);
-        b.fillStyle = armR.base; b.fillRect(-6, shoulderY - 15, 11, 7);
-        b.fillStyle = armR.li2;  b.fillRect(1, shoulderY - 14, 3, 2);
-        this._slab(b, -6, shoulderY - 8, 3, 7, pal.armour);
-        this._slab(b,  3, shoulderY - 8, 3, 7, pal.armour);
-        b.fillStyle = armR.base; b.fillRect(-1, shoulderY - 8, 2, 6);
-        b.fillStyle = trimR.li1; b.fillRect(-6, shoulderY - 15, 12, 1);
-        b.fillStyle = '#140f1c';
-        b.fillRect(-4, shoulderY - 6, 2, 2);
-        b.fillRect(1, shoulderY - 6, 2, 2);
-        b.fillStyle = 'rgba(255,240,200,0.55)';
-        b.fillRect(1, shoulderY - 6, 1, 1);
-
-        // horsehair crest, lagging the head
-        const crestR = this.ramp(pal.crest);
-        // Horsehair arcs up from the brow and sweeps back over the neck, with
-        // the tail lagging further than the root.
-        for (let i = 0; i < 14; i++) {
-            const u = i / 13;
-            const lag = P.crestX * 40 * u * u;
-            const drift = Math.sin(t * 3.2 + u * 3.4) * (0.6 + u * 1.6) + lag;
-            const x = 4 - u * 13 + drift;                       // brow -> nape
-            const arc = Math.sin(u * Math.PI * 0.85) * 7;
-            const y = shoulderY - 15 - arc;
-            const len = 4 + arc * 0.7 + u * 3;
-            b.fillStyle = u < 0.3 ? crestR.li1 : (u < 0.7 ? crestR.base : crestR.sh1);
-            b.fillRect(x, y, 1.6, len);
+        // folds: bands that follow the sway, so the cloth has volume
+        for (let i = 0; i < 4; i++) {
+            const u = i / 3;
+            const xt = -7 - u * (15 + sway * 0.9);
+            b.fillStyle = i % 2 ? capeR.base : capeR.sh2;
+            b.beginPath();
+            b.moveTo(xt, capeTop + 3 + u * 3);
+            b.quadraticCurveTo(xt - 5 - sway * 0.4, hipY - 6, xt - 6 - sway * 0.6, hem - 2 - u * 3);
+            b.lineTo(xt - 1 - sway * 0.5, hem - 1 - u * 3);
+            b.quadraticCurveTo(xt + 1, hipY - 6, xt + 3.5, capeTop + 3 + u * 3);
+            b.closePath(); b.fill();
         }
+        // a lit edge where the cloth turns over toward the sun
+        b.fillStyle = capeR.li1;
+        b.beginPath();
+        b.moveTo(3, capeTop + 3);
+        b.quadraticCurveTo(-1, hipY - 8, -4 - sway * 0.4, hem + 2);
+        b.lineTo(-6 - sway * 0.4, hem + 2);
+        b.quadraticCurveTo(-3, hipY - 8, 1, capeTop + 3);
+        b.closePath(); b.fill();
+
+        // ---- legs ----
+        const legLen = 60 - P.knee;
+        this._limb(b, -8, hipY, 11, legLen, 0.09 + P.knee * 0.03, pal.skin);
+        this._limb(b,  8, hipY, 11, legLen, -0.12 - P.knee * 0.02, pal.skin);
+        // knee highlights
+        const skinR = this.ramp(pal.skin);
+        b.fillStyle = skinR.li1;
+        b.fillRect(-6, hipY + legLen * 0.46, 4, 3);
+        b.fillRect(10, hipY + legLen * 0.46, 4, 3);
+        // Greaves. Pulled toward the armour colour rather than raw `metal`:
+        // bright steel here reads as a pair of white socks against the skin.
+        const greave = this._mix(pal.metal, pal.armour, 0.62);
+        this._slab(b, -14, hipY + legLen - 30, 11, 25, greave, { top: true });
+        this._slab(b,   4, hipY + legLen - 30, 11, 25, greave, { top: true });
+        // sandals
+        const sole = this.ramp('#5a4028');
+        b.fillStyle = sole.base; b.fillRect(-15, hipY + legLen - 3, 14, 4);
+        b.fillStyle = sole.base; b.fillRect(3, hipY + legLen - 3, 14, 4);
+        b.fillStyle = sole.sh2;  b.fillRect(-15, hipY + legLen + 1, 14, 1.5);
+        b.fillStyle = sole.sh2;  b.fillRect(3, hipY + legLen + 1, 14, 1.5);
+
+        // ---- skirt, back arm, body ----
+        this._pteruges(b, pal, hipY, t, swing);
+        this._limb(b, -12, shoulderY + 9, 9, 34, P.armB, pal.skin);
+        this._cuirass(b, pal, shoulderY, hipY);
+
+        // shoulder guards, sitting on the ends of the collar
+        this._slab(b, -20, shoulderY + 1, 9, 10, pal.armour, { top: true });
+        this._slab(b,  11, shoulderY + 1, 9, 10, pal.armour, { top: true });
+
+        // ---- neck and head ----
+        b.fillStyle = skinR.sh2; b.fillRect(-4, shoulderY - 6, 8, 8);       // neck
+        b.fillStyle = skinR.sh1; b.fillRect(-3, shoulderY - 6, 6, 8);
+        b.fillStyle = skinR.sh2;  b.fillRect(-7, headY, 14, 20);
+        b.fillStyle = skinR.sh1;  b.fillRect(-6, headY, 12, 19);
+        b.fillStyle = skinR.base; b.fillRect(-5, headY + 1, 10, 18);
+        b.fillStyle = skinR.li1;  b.fillRect(2, headY + 3, 2.5, 9);
+        b.fillStyle = skinR.sh2;  b.fillRect(-7, headY + 15, 14, 3);        // jaw shadow
+        // beard
+        const beard = this.ramp(this._mix(pal.crest, '#3b2a1e', 0.6));
+        b.fillStyle = beard.base; b.fillRect(-6, headY + 11, 12, 8);
+        b.fillStyle = beard.sh1;  b.fillRect(-6, headY + 16, 12, 3);
+        b.fillStyle = beard.li1;  b.fillRect(3, headY + 12, 1.6, 5);
+
+        const helmY = this._helmet(b, pal, headY);
+
+        // ---- hoplon on the back arm ----
+        this._hoplon(b, pal, -25 - P.shield, shoulderY + 14, id);
+
+        // ---- front arm and spear ----
+        // The spear hangs off the hand rather than off a fixed point on the
+        // torso, so it stays in the grip through every pose instead of
+        // drifting across the chest when the arm swings.
+        const AX = 13, AY = shoulderY + 9, ALEN = 32;
+        this._limb(b, AX, AY, 9, ALEN, P.armF, pal.skin);
+        const handX = AX - ALEN * Math.sin(P.armF);
+        const handY = AY + ALEN * Math.cos(P.armF);
+        const backHandX = -12 - 34 * Math.sin(P.armB);
+        const backHandY = shoulderY + 9 + 34 * Math.cos(P.armB);
+        const fist = (fx, fy) => {
+            b.fillStyle = skinR.sh2;  b.fillRect(fx - 4.5, fy - 3.5, 9, 8);
+            b.fillStyle = skinR.base; b.fillRect(fx - 3.5, fy - 3.5, 7, 7);
+            b.fillStyle = skinR.li1;  b.fillRect(fx + 1.5, fy - 2.5, 2, 4);
+        };
+        fist(backHandX, backHandY);
+
+        b.save();
+        b.translate(handX, handY);
+        b.rotate(P.spear * 0.42);              // held close to upright at rest
+        const shaft = this.ramp('#7a5a34'), tip = this.ramp(pal.metal);
+        b.fillStyle = shaft.sh2;  b.fillRect(-2.5, -84, 5, 142);
+        b.fillStyle = shaft.sh1;  b.fillRect(-2.5, -84, 4, 142);
+        b.fillStyle = shaft.base; b.fillRect(-1.5, -84, 2, 142);
+        b.fillStyle = shaft.li1;  b.fillRect(0.5, -82, 1, 138);
+        b.fillStyle = shaft.sh3;  b.fillRect(-2.5, -6, 5, 12);              // bound grip
+        b.fillStyle = tip.sh1; b.fillRect(-3, -88, 6, 5);                   // socket
+        b.fillStyle = tip.sh1;                                              // blade
+        b.beginPath(); b.moveTo(0, -105); b.lineTo(6, -84); b.lineTo(-6, -84); b.closePath(); b.fill();
+        b.fillStyle = tip.base;
+        b.beginPath(); b.moveTo(0, -103); b.lineTo(4.2, -85); b.lineTo(-4.2, -85); b.closePath(); b.fill();
+        b.fillStyle = tip.li3;
+        b.beginPath(); b.moveTo(0, -100); b.lineTo(2, -86); b.lineTo(-0.6, -86); b.closePath(); b.fill();
+        b.fillStyle = tip.sh2; b.fillRect(-2, 52, 4, 7);                    // butt-spike
+        b.restore();
+        fist(handX, handY);
+
+        this._crest(b, pal, helmY, t, P.crestX);
         b.restore();
 
         // ---- rim light ----
@@ -909,123 +1221,775 @@ const Iliad = {
         r.globalCompositeOperation = 'source-over';
         r.drawImage(this._buf, 0, 0);
         r.globalCompositeOperation = 'destination-out';
-        r.drawImage(this._buf, -1, 1);               // key from upper right
+        r.drawImage(this._buf, -2, 2);               // key from upper right
         r.globalCompositeOperation = 'source-in';
-        r.fillStyle = 'rgba(255,238,198,0.5)';       // a hint, not an outline
+        r.fillStyle = opts.rim || 'rgba(255,238,198,0.55)';
         r.fillRect(0, 0, BW, BH);
         r.globalCompositeOperation = 'source-over';
 
         // cool bounce on the shadow side, much fainter
-        const bo = this._bounce || (this._bounce = (() => {
-            const c = document.createElement('canvas'); c.width = BW; c.height = BH; return c;
-        })());
-        const bc = bo.getContext('2d');
+        const bc = this._bounce.getContext('2d');
         bc.clearRect(0, 0, BW, BH);
         bc.globalCompositeOperation = 'source-over';
         bc.drawImage(this._buf, 0, 0);
         bc.globalCompositeOperation = 'destination-out';
-        bc.drawImage(this._buf, 1.6, -0.6);
+        bc.drawImage(this._buf, 2.6, -1);
         bc.globalCompositeOperation = 'source-in';
-        bc.fillStyle = 'rgba(120,160,220,0.26)';
+        bc.fillStyle = opts.bounce || 'rgba(120,160,220,0.3)';
         bc.fillRect(0, 0, BW, BH);
         bc.globalCompositeOperation = 'source-over';
 
         // A dark outline dilated from the silhouette. Pixel art needs this to
         // sit on a busy background — and it is what lets the rim light read as
         // light rather than as a white sticker edge.
-        const ol = this._outline || (this._outline = (() => {
-            const c = document.createElement('canvas'); c.width = BW; c.height = BH; return c;
-        })());
-        const oc = ol.getContext('2d');
+        const oc = this._outline.getContext('2d');
         oc.clearRect(0, 0, BW, BH);
         oc.globalCompositeOperation = 'source-over';
-        for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1]]) oc.drawImage(this._buf, dx, dy);
+        for (const [dx, dy] of [[-2,0],[2,0],[0,-2],[0,2],[-1,-1],[1,1],[1,-1],[-1,1]]) {
+            oc.drawImage(this._buf, dx, dy);
+        }
         oc.globalCompositeOperation = 'source-in';
-        oc.fillStyle = 'rgba(28,18,32,0.72)';
+        oc.fillStyle = 'rgba(26,16,30,0.78)';
         oc.fillRect(0, 0, BW, BH);
         oc.globalCompositeOperation = 'source-over';
 
         // ---- composite ----
+        const sc = opts.scale || 1;
         ctx.save();
         ctx.translate(cx, groundY);
-        ctx.scale(facing, 1);
-        ctx.fillStyle = 'rgba(0,0,0,0.30)';
-        ctx.beginPath(); ctx.ellipse(0, 1, 13, 3.5, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.drawImage(ol, -ox, -oy);
+        ctx.scale(facing * sc, sc);
+
+        // contact shadow: tight and dark under the feet, soft further out
+        ctx.fillStyle = 'rgba(24,14,28,0.34)';
+        ctx.beginPath(); ctx.ellipse(0, 2, 30, 7, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(24,14,28,0.30)';
+        ctx.beginPath(); ctx.ellipse(0, 1, 17, 4.5, 0, 0, Math.PI * 2); ctx.fill();
+
+        if (opts.reflect) this._reflect(ctx, ox, oy, BW, BH, t);
+
+        ctx.drawImage(this._outline, -ox, -oy);
         ctx.drawImage(this._buf, -ox, -oy);
-        ctx.drawImage(bo, -ox, -oy);
+        ctx.drawImage(this._bounce, -ox, -oy);
         ctx.drawImage(this._rim, -ox, -oy);
+
+        // atmospheric haze for anything standing far back
+        if (opts.haze) {
+            ctx.globalCompositeOperation = 'source-atop';
+            ctx.fillStyle = opts.haze;
+            ctx.fillRect(-ox, -oy, BW, BH);
+            ctx.globalCompositeOperation = 'source-over';
+        }
         ctx.restore();
     },
 
+    // Mirror the fighter into the water, sliced into bands so each band can be
+    // pushed sideways by the ripple underneath it.
+    _reflect(ctx, ox, oy, BW, BH, t) {
+        ctx.save();
+        ctx.globalAlpha = 0.22;
+        ctx.scale(1, -1);
+        for (let y = 0; y < 130; y += 5) {
+            const wob = Math.sin(t * 2.6 + y * 0.16) * (1 + y * 0.05);
+            ctx.drawImage(this._buf,
+                0, oy - y - 5, BW, 5,
+                -ox + wob, y - 5, BW, 5);
+        }
+        ctx.restore();
+    },
+
+    // ---------- backdrops ----------
+    //
+    // The battlefield is four cached layers (sky, far hills, the walls of
+    // Troy, the ground) plus whatever moves: clouds, banners, birds, water,
+    // dust. Rebuilding the static layers costs a few milliseconds and happens
+    // only when the setting changes.
+
+    STAGES: {
+        plain: { sky:['#3f6f9e','#8fb0c4','#e2c89a'], hill:'#6d7f93', wall:'#9a8768',
+                 ground:'#c9a86e', grit:'#b08f58', haze:'#d9c39a', sun:'#fff2c8' },
+        river: { sky:['#1d4a68','#5d99ad','#a8cdd4'], hill:'#2f5f72', wall:'#5d7f88',
+                 ground:'#4f93a8', grit:'#3f7f94', haze:'#9dc4cc', sun:'#dff2f4' },
+        divine:{ sky:['#3a2a5c','#8b5f97','#e0a48f'], hill:'#4a3a68', wall:'#7a5f82',
+                 ground:'#a07a86', grit:'#8a6472', haze:'#c9a0b8', sun:'#ffd9c0' },
+        walls: { sky:['#5a3a52','#b06a5a','#f0c288'], hill:'#6b4a58', wall:'#a88a68',
+                 ground:'#bb8f62', grit:'#9c7148', haze:'#e0b78e', sun:'#fff0c0' }
+    },
+
+    _stageKey() {
+        const f = this.foe;
+        if (!f) return 'plain';
+        if (f.name === 'Scamander') return 'river';
+        if (f.divine) return 'divine';
+        if (f.boss) return 'walls';
+        return 'plain';
+    },
+
+    _layer(w, h, paint) {
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        paint(c.getContext('2d'), w, h);
+        return c;
+    },
+
+    _buildStage(key) {
+        const S = this.STAGES[key] || this.STAGES.plain;
+        const W = this.W, H = this.H, HZ = this.HORIZON;
+        const rnd = (seed => () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)(9161);
+
+        // --- sky: gradient, sun, and the glow that sells the sun ---
+        const sky = this._layer(W, H, (g) => {
+            const grad = g.createLinearGradient(0, 0, 0, HZ + 20);
+            grad.addColorStop(0, S.sky[0]);
+            grad.addColorStop(0.62, S.sky[1]);
+            grad.addColorStop(1, S.sky[2]);
+            g.fillStyle = grad; g.fillRect(0, 0, W, HZ + 20);
+
+            const [sx, sy] = this.SUN;
+            const halo = g.createRadialGradient(sx, sy, 4, sx, sy, 118);
+            halo.addColorStop(0, 'rgba(255,246,214,0.6)');
+            halo.addColorStop(0.2, 'rgba(255,238,190,0.2)');
+            halo.addColorStop(1, 'rgba(255,230,170,0)');
+            g.fillStyle = halo; g.fillRect(sx - 130, sy - 130, 260, 260);
+            g.fillStyle = S.sun;
+            g.beginPath(); g.arc(sx, sy, 17, 0, Math.PI * 2); g.fill();
+        });
+
+        // --- clouds: a wide strip so it can wrap without a seam ---
+        // Cumulus, not smudges: a flat base with domes stacked on it, a cool
+        // underside, and a lit cap offset toward the sun.
+        const clouds = this._layer(W * 2, 150, (g, cw) => {
+            for (let i = 0; i < 20; i++) {
+                const x = rnd() * cw, y = 24 + rnd() * 84;
+                const s = 0.45 + rnd() * 0.85;
+                const puffs = 3 + Math.floor(rnd() * 3);
+                const domes = [];
+                for (let p = 0; p < puffs; p++) {
+                    domes.push({
+                        x: x + p * 19 * s,
+                        y: y - Math.abs(Math.sin(p * 1.3)) * 7 * s,
+                        r: (9 + rnd() * 7) * s
+                    });
+                }
+                const flat = y + 4 * s;
+                const blob = (dx, dy, grow) => {
+                    g.beginPath();
+                    for (const d of domes) {
+                        g.moveTo(d.x + dx + d.r + grow, d.y + dy);
+                        g.arc(d.x + dx, d.y + dy, d.r + grow, 0, Math.PI * 2);
+                    }
+                    g.rect(x + dx - 12 * s, flat + dy - 6 * s, puffs * 19 * s + 20 * s, 6 * s);
+                    g.fill();
+                };
+                g.fillStyle = `rgba(150,168,200,${0.14 + rnd() * 0.08})`;  // cool underside
+                blob(0, 2.5 * s, 0);
+                g.fillStyle = `rgba(244,248,255,${0.30 + rnd() * 0.16})`;  // body
+                blob(0, 0, -0.5);
+                g.fillStyle = `rgba(255,251,236,${0.34 + rnd() * 0.2})`;   // sunlit cap
+                blob(2.5 * s, -3 * s, -3.5 * s);
+            }
+        });
+
+        // --- far hills: Ida, two ridges, hazed toward the sky colour ---
+        const far = this._layer(W, H, (g) => {
+            // Cusped peaks rather than rolling humps: abs(sin) puts a sharp
+            // apex at every crest, which is what separates a mountain from a
+            // sand dune. Two ridges at different frequencies keeps it from
+            // repeating visibly across 640px.
+            const profile = (x, baseY, amp, ph) =>
+                baseY
+                - Math.abs(Math.sin(x * 0.0041 + ph)) * amp
+                - Math.abs(Math.sin(x * 0.0117 + ph * 2.3)) * amp * 0.38
+                - Math.sin(x * 0.036 + ph) * amp * 0.07;
+            const ridge = (baseY, amp, colour, ph) => {
+                g.fillStyle = colour;
+                g.beginPath();
+                g.moveTo(0, HZ);
+                for (let x = 0; x <= W; x += 4) g.lineTo(x, profile(x, baseY, amp, ph));
+                g.lineTo(W, HZ); g.closePath(); g.fill();
+            };
+            // Distant land goes blue, toward the colour of the air in front of
+            // it — pulling it toward the warm ground haze instead turns Ida
+            // into a beige balloon sitting on the walls.
+            const air = S.sky[1];
+            ridge(HZ - 46, 40, this._mix(S.hill, air, 0.68), 0.6);
+            ridge(HZ - 26, 26, this._mix(S.hill, air, 0.44), 2.4);
+            // sunlit western faces on the near ridge
+            g.fillStyle = 'rgba(255,246,220,0.22)';
+            for (let x = 0; x <= W; x += 4) {
+                const y = profile(x, HZ - 26, 26, 2.4);
+                const slope = profile(x + 4, HZ - 26, 26, 2.4) - y;
+                if (slope > 0.4) g.fillRect(x, y, 4, 2 + Math.min(6, slope));
+            }
+        });
+
+        // --- Troy: curtain wall, towers, battlements, gate ---
+        const mid = this._layer(W, H, (g) => {
+            const wallTop = HZ - 34, base = HZ + 2;
+            const wr = this.ramp(S.wall);
+            g.fillStyle = wr.sh1; g.fillRect(0, wallTop, W, base - wallTop);
+            g.fillStyle = wr.base; g.fillRect(0, wallTop + 2, W, base - wallTop - 2);
+            // courses
+            g.fillStyle = wr.sh2;
+            for (let y = wallTop + 7; y < base; y += 7) g.fillRect(0, y, W, 1);
+            for (let y = wallTop + 7, k = 0; y < base; y += 7, k++) {
+                for (let x = (k % 2) * 13; x < W; x += 26) g.fillRect(x, y - 6, 1, 6);
+            }
+            g.fillStyle = wr.li1; g.fillRect(0, wallTop + 2, W, 2);
+            // battlements
+            g.fillStyle = wr.base;
+            for (let x = 4; x < W; x += 18) {
+                g.fillRect(x, wallTop - 8, 10, 9);
+                g.fillStyle = wr.li1; g.fillRect(x, wallTop - 8, 10, 2);
+                g.fillStyle = wr.base;
+            }
+            // the wall falls into shadow toward its foot, which is most of what
+            // makes a flat rectangle read as a standing mass of stone
+            const shade = g.createLinearGradient(0, wallTop, 0, base);
+            shade.addColorStop(0, 'rgba(40,26,44,0)');
+            shade.addColorStop(1, 'rgba(40,26,44,0.3)');
+            g.fillStyle = shade; g.fillRect(0, wallTop, W, base - wallTop);
+
+            // towers
+            for (const tx of [46, 214, 392, 568]) {
+                // each tower throws a shadow along the curtain wall, away from
+                // the sun, which is what gives the run of stone any relief
+                const sg = g.createLinearGradient(tx + 20, 0, tx + 62, 0);
+                sg.addColorStop(0, 'rgba(38,24,42,0.34)');
+                sg.addColorStop(1, 'rgba(38,24,42,0)');
+                g.fillStyle = sg; g.fillRect(tx + 20, wallTop - 8, 42, base - wallTop + 8);
+            }
+            for (const tx of [46, 214, 392, 568]) {
+                g.fillStyle = wr.sh1; g.fillRect(tx - 20, wallTop - 34, 40, base - wallTop + 34);
+                g.fillStyle = wr.base; g.fillRect(tx - 18, wallTop - 32, 36, base - wallTop + 32);
+                g.fillStyle = wr.li1; g.fillRect(tx + 10, wallTop - 32, 5, base - wallTop + 32);
+                g.fillStyle = wr.sh2; g.fillRect(tx - 18, wallTop - 32, 5, base - wallTop + 32);
+                g.fillStyle = wr.base;
+                for (let x = tx - 18; x < tx + 18; x += 12) {
+                    g.fillRect(x, wallTop - 40, 7, 9);
+                    g.fillStyle = wr.li1; g.fillRect(x, wallTop - 40, 7, 2);
+                    g.fillStyle = wr.base;
+                }
+                g.fillStyle = 'rgba(20,12,26,0.55)';
+                g.fillRect(tx - 4, wallTop - 24, 8, 11);        // window
+            }
+            // the Scaean gate
+            g.fillStyle = 'rgba(22,13,28,0.62)';
+            g.beginPath();
+            g.moveTo(320, base); g.lineTo(320, wallTop + 12);
+            g.quadraticCurveTo(342, wallTop - 2, 364, wallTop + 12);
+            g.lineTo(364, base); g.closePath(); g.fill();
+            g.strokeStyle = wr.li1; g.lineWidth = 2;
+            g.beginPath();
+            g.moveTo(319, base); g.lineTo(319, wallTop + 12);
+            g.quadraticCurveTo(342, wallTop - 4, 365, wallTop + 12);
+            g.lineTo(365, base); g.stroke();
+            // haze over the whole wall pushes it back in space. It has to fade
+            // out before the wall's foot, or the gradient's hard end draws a
+            // line across the picture exactly where the eye is looking.
+            const h = g.createLinearGradient(0, wallTop - 46, 0, base - 4);
+            h.addColorStop(0, this._rgba(S.haze, 0));
+            h.addColorStop(1, this._rgba(this._mix(S.haze, '#ffffff', 0.12), 0.42));
+            g.fillStyle = h;
+            g.fillRect(0, wallTop - 46, W, base - wallTop + 42);
+        });
+
+        // --- ground: a plane whose texture thins toward the horizon ---
+        const ground = this._layer(W, H, (g) => {
+            const gr = this.ramp(S.ground);
+            const grad = g.createLinearGradient(0, HZ, 0, H);
+            grad.addColorStop(0, this._mix(S.ground, S.haze, 0.45));
+            grad.addColorStop(0.35, S.ground);
+            grad.addColorStop(1, gr.sh1);
+            g.fillStyle = grad; g.fillRect(0, HZ, W, H - HZ);
+
+            // Broad tonal patches first — dry ground is blotchy long before it
+            // is grainy, and without this the plane stays a flat colour field.
+            for (let i = 0; i < 90; i++) {
+                const u = Math.pow(rnd(), 0.5);
+                const y = HZ + u * (H - HZ);
+                const rx = (24 + rnd() * 90) * (0.35 + u), ry = (4 + rnd() * 12) * (0.35 + u);
+                g.globalAlpha = 0.05 + rnd() * 0.09;
+                g.fillStyle = rnd() > 0.5 ? this._mix(S.grit, '#000000', 0.3)
+                                          : this._mix(S.ground, '#fff0c8', 0.4);
+                g.beginPath(); g.ellipse(rnd() * W, y, rx, ry, 0, 0, Math.PI * 2); g.fill();
+            }
+
+            // then grit: each speck gets bigger and more contrasty as it comes
+            // forward, which is all the perspective a flat plane needs
+            for (let i = 0; i < 900; i++) {
+                const u = Math.pow(rnd(), 0.62);
+                const y = HZ + 1 + u * (H - HZ);
+                const w = 1 + u * 9, hgt = 1 + u * 1.8;
+                const x = rnd() * (W + 20) - 10;
+                g.fillStyle = rnd() > 0.42 ? this._mix(S.grit, S.ground, rnd() * 0.6)
+                                           : this._mix(S.grit, '#000000', 0.26);
+                g.globalAlpha = (0.10 + u * 0.42) * (0.4 + rnd() * 0.6);
+                g.fillRect(x, y, w, hgt);
+            }
+            // pebbles catching the light, foreground only
+            for (let i = 0; i < 70; i++) {
+                const u = 0.35 + rnd() * 0.65;
+                const x = rnd() * W, y = HZ + u * (H - HZ), r = 1 + rnd() * 2.4;
+                g.globalAlpha = 0.5;
+                g.fillStyle = this._mix(S.grit, '#000000', 0.4);
+                g.beginPath(); g.ellipse(x, y + r * 0.5, r * 1.5, r * 0.7, 0, 0, Math.PI * 2); g.fill();
+                g.fillStyle = this._mix(S.ground, '#fff4d2', 0.5);
+                g.beginPath(); g.ellipse(x, y, r, r * 0.75, 0, 0, Math.PI * 2); g.fill();
+            }
+            g.globalAlpha = 1;
+
+            // cart ruts, converging slightly so they agree with the perspective
+            g.strokeStyle = 'rgba(40,24,18,0.07)'; g.lineWidth = 3;
+            for (let i = 0; i < 4; i++) {
+                g.beginPath();
+                const y0 = HZ + 16 + i * 11;
+                g.moveTo(-30, y0 + i * 6);
+                g.bezierCurveTo(W * 0.35, y0 + 14 + i * 9, W * 0.65, y0 + 4 + i * 13, W + 30, y0 + 30 + i * 22);
+                g.stroke();
+            }
+
+            // a darker foreground band to frame the shot and hold the eye in
+            const fg = g.createLinearGradient(0, H - 96, 0, H);
+            fg.addColorStop(0, 'rgba(34,18,22,0)');
+            fg.addColorStop(1, 'rgba(34,18,22,0.34)');
+            g.fillStyle = fg; g.fillRect(0, H - 96, W, 96);
+
+            // Dust hanging at the foot of the wall. Painted here rather than in
+            // the wall layer so it straddles the join and there is no seam.
+            const band = g.createLinearGradient(0, HZ - 30, 0, HZ + 54);
+            band.addColorStop(0, this._rgba(S.haze, 0));
+            band.addColorStop(0.38, this._rgba(S.haze, 0.5));
+            band.addColorStop(1, this._rgba(S.haze, 0));
+            g.fillStyle = band; g.fillRect(0, HZ - 30, W, 84);
+        });
+
+        // --- foreground dressing: the debris of a long war ---
+        const props = this._layer(W, H, (g) => {
+            const dark = t => `rgba(34,20,26,${t})`;
+            // broken spears stuck in the ground
+            for (const [x, y, a, len] of [[54, 330, -0.32, 74], [612, 316, 0.26, 62], [286, 352, -0.12, 50]]) {
+                g.save(); g.translate(x, y); g.rotate(a);
+                g.fillStyle = dark(0.55); g.fillRect(-2, -len, 5, len);
+                g.fillStyle = '#6b4e2e'; g.fillRect(-1, -len, 3, len);
+                g.fillStyle = '#8b929c';
+                g.beginPath(); g.moveTo(0, -len - 11); g.lineTo(5, -len); g.lineTo(-5, -len); g.closePath(); g.fill();
+                g.restore();
+            }
+            // a discarded shield, seen edge-on
+            g.save(); g.translate(560, 348); g.rotate(0.5);
+            g.fillStyle = dark(0.5); g.beginPath(); g.ellipse(0, 0, 26, 9, 0, 0, Math.PI * 2); g.fill();
+            g.fillStyle = '#8a7346'; g.beginPath(); g.ellipse(0, -2, 24, 8, 0, 0, Math.PI * 2); g.fill();
+            g.fillStyle = '#a98c56'; g.beginPath(); g.ellipse(-3, -4, 12, 4, 0, 0, Math.PI * 2); g.fill();
+            g.restore();
+            // grass tufts along the bottom edge
+            for (let i = 0; i < 46; i++) {
+                const x = rnd() * W, y = H - 34 - rnd() * 30;
+                const hgt = 5 + rnd() * 9;
+                g.strokeStyle = `rgba(${70 + rnd() * 40 | 0},${72 + rnd() * 34 | 0},44,0.5)`;
+                g.lineWidth = 1.4;
+                for (let k = -1; k <= 1; k++) {
+                    g.beginPath(); g.moveTo(x, y);
+                    g.quadraticCurveTo(x + k * 3, y - hgt * 0.6, x + k * 6, y - hgt);
+                    g.stroke();
+                }
+            }
+        });
+
+        // --- the armies, drawn up in front of the wall ---
+        // Two ranks of silhouettes and a thicket of spears. This is what makes
+        // the plain read as a battlefield rather than an empty field with two
+        // men on it, and it fills the dead space between the duellists.
+        const ranks = this._layer(W, H, (g) => {
+            const rank = (y, scale, tint, step) => {
+                for (let x = -6; x < W + 10; x += step) {
+                    const jit = (rnd() - 0.5) * step * 0.5;
+                    const px = x + jit;
+                    const hgt = (13 + rnd() * 3) * scale;
+                    g.fillStyle = tint;
+                    // spear, held upright, lengths varied so the line is ragged
+                    g.fillRect(px + 3 * scale, y - hgt - (13 + rnd() * 9) * scale,
+                               Math.max(1, 1.2 * scale), (16 + rnd() * 9) * scale);
+                    // round shield seen edge-on, then the body
+                    g.fillRect(px - 3 * scale, y - hgt, 6 * scale, hgt);
+                    g.beginPath();
+                    g.arc(px - 3.5 * scale, y - hgt * 0.62, 3.4 * scale, 0, Math.PI * 2);
+                    g.fill();
+                    // crest
+                    g.fillRect(px - 1.5 * scale, y - hgt - 3 * scale, 4 * scale, 3 * scale);
+                }
+            };
+            rank(HZ + 9,  0.62, 'rgba(58,44,58,0.34)', 7);
+            rank(HZ + 17, 0.78, 'rgba(48,34,48,0.42)', 9);
+            // dust kicked up in front of the ranks, hiding their feet
+            const d = g.createLinearGradient(0, HZ + 4, 0, HZ + 32);
+            d.addColorStop(0, this._rgba(S.haze, 0));
+            d.addColorStop(1, this._rgba(S.haze, 0.55));
+            g.fillStyle = d; g.fillRect(0, HZ + 4, W, 28);
+        });
+
+        return { key, S, sky, clouds, far, mid, ground, ranks, props };
+    },
+
+    _stage() {
+        const key = this._stageKey();
+        if (!this._bg || this._bg.key !== key) this._bg = this._buildStage(key);
+        return this._bg;
+    },
+
     drawBackground(ctx, t) {
-        const stage = this.foe;
-        // Sky shifts with the setting: river, walls, plain.
-        const river = stage && stage.name === 'Scamander';
-        const divine = stage && stage.divine;
-        const top = river ? '#25506b' : divine ? '#4b3a6b' : '#5d7fa8';
-        const g = ctx.createLinearGradient(0, 0, 0, this.H);
-        g.addColorStop(0, top);
-        g.addColorStop(0.55, river ? '#6aa3b5' : divine ? '#c9a0b8' : '#e0c99a');
-        g.addColorStop(1, river ? '#8fbfcc' : '#d9b47e');
-        ctx.fillStyle = g;
-        ctx.fillRect(0, 0, this.W, this.H);
+        const B = this._stage(), S = B.S, W = this.W, H = this.H, HZ = this.HORIZON;
+        const river = B.key === 'river';
 
-        // sun
-        ctx.fillStyle = 'rgba(255,240,200,0.5)';
-        ctx.beginPath(); ctx.arc(300, 48, 20, 0, Math.PI * 2); ctx.fill();
+        ctx.drawImage(B.sky, 0, 0);
 
-        // distant Troy
-        ctx.fillStyle = river ? '#2f5f72' : '#8a7a63';
-        for (let i = 0; i < 8; i++) {
-            const x = 20 + i * 46, h = 22 + ((i * 37) % 18);
-            ctx.fillRect(x, 108 - h, 30, h);
-            ctx.fillRect(x + 6, 104 - h, 18, 6);
+        // clouds drift; two passes at different speeds gives cheap depth
+        const cw = B.clouds.width;
+        const off1 = (t * 5) % cw, off2 = (t * 11) % cw;
+        ctx.globalAlpha = 0.55;
+        ctx.drawImage(B.clouds, -off1, 6);
+        ctx.drawImage(B.clouds, cw - off1, 6);
+        ctx.globalAlpha = 0.8;
+        ctx.drawImage(B.clouds, -off2, 34);
+        ctx.drawImage(B.clouds, cw - off2, 34);
+        ctx.globalAlpha = 1;
+
+        // god rays from the sun, breathing slowly
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.translate(this.SUN[0], this.SUN[1]);
+        for (let i = 0; i < 7; i++) {
+            const a = -2.5 + i * 0.42 + Math.sin(t * 0.22 + i) * 0.035;
+            const spread = 0.05 + Math.sin(t * 0.4 + i * 2) * 0.014;
+            const g = ctx.createLinearGradient(0, 0, Math.cos(a) * 420, Math.sin(a) * 420);
+            g.addColorStop(0, 'rgba(255,242,206,0.055)');
+            g.addColorStop(1, 'rgba(255,238,190,0)');
+            ctx.fillStyle = g;
+            ctx.beginPath(); ctx.moveTo(0, 0);
+            ctx.lineTo(Math.cos(a - spread) * 460, Math.sin(a - spread) * 460);
+            ctx.lineTo(Math.cos(a + spread) * 460, Math.sin(a + spread) * 460);
+            ctx.closePath(); ctx.fill();
         }
-        ctx.fillStyle = 'rgba(0,0,0,0.12)';
-        ctx.fillRect(0, 104, this.W, 6);
+        ctx.restore();
 
-        // ground
-        ctx.fillStyle = river ? '#4f93a8' : '#c2a06a';
-        ctx.fillRect(0, 110, this.W, this.H - 110);
-        ctx.fillStyle = river ? '#3f7f94' : '#b08f5c';
-        for (let i = 0; i < 40; i++) {
-            const x = (i * 61 + Math.floor(t * (river ? 24 : 0))) % (this.W + 40) - 20;
-            const y = 126 + (i * 29) % 74;
-            ctx.fillRect(x, y, 14, 2);
+        // birds, high and slow — the eye reads motion up there as scale
+        ctx.strokeStyle = 'rgba(40,32,44,0.34)'; ctx.lineWidth = 1.4;
+        for (let i = 0; i < 5; i++) {
+            const bx = ((t * 13 + i * 137) % (W + 80)) - 40;
+            const by = 34 + i * 13 + Math.sin(t * 0.7 + i) * 5;
+            const flap = Math.sin(t * 5.5 + i * 1.7) * 2.6;
+            ctx.beginPath();
+            ctx.moveTo(bx - 4, by + flap); ctx.lineTo(bx, by);
+            ctx.lineTo(bx + 4, by + flap); ctx.stroke();
         }
+
+        ctx.drawImage(B.far, 0, 0);
+        ctx.drawImage(B.mid, 0, 0);
+
+        // banners on the towers, rippling
+        for (const tx of [58, 236, 430, 592]) {
+            const wallTop = HZ - 34;
+            ctx.fillStyle = 'rgba(30,20,28,0.5)';
+            ctx.fillRect(tx - 1, wallTop - 62, 2, 24);
+            ctx.beginPath();
+            ctx.moveTo(tx + 1, wallTop - 60);
+            for (let k = 0; k <= 5; k++) {
+                const u = k / 5;
+                ctx.lineTo(tx + 1 + u * 20, wallTop - 60 + Math.sin(t * 3.4 + u * 3.4 + tx) * 2.4 * u + u * 2);
+            }
+            for (let k = 5; k >= 0; k--) {
+                const u = k / 5;
+                ctx.lineTo(tx + 1 + u * 20, wallTop - 48 + Math.sin(t * 3.4 + u * 3.4 + tx) * 2.4 * u + u * 2);
+            }
+            ctx.closePath();
+            ctx.fillStyle = B.key === 'walls' ? 'rgba(196,74,58,0.85)' : 'rgba(150,120,84,0.7)';
+            ctx.fill();
+        }
+
+        // smoke from behind the walls
+        ctx.globalAlpha = 0.14;
+        for (let i = 0; i < 4; i++) {
+            const sxp = 130 + i * 150;
+            const rise = (t * 9 + i * 40) % 120;
+            ctx.fillStyle = '#2b2029';
+            ctx.beginPath();
+            ctx.ellipse(sxp + Math.sin(t * 0.5 + i) * 12, HZ - 40 - rise,
+                        16 + rise * 0.32, 9 + rise * 0.2, 0, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        ctx.drawImage(B.ground, 0, 0);
+        ctx.drawImage(B.ranks, 0, 0);
+
+        if (river) {
+            // moving water: bright crests near the horizon, longer swells close up
+            ctx.save();
+            for (let i = 0; i < 54; i++) {
+                const u = i / 54;
+                const y = HZ + 6 + Math.pow(u, 1.7) * (H - HZ);
+                const speed = 12 + u * 70;
+                const x = ((i * 137 + t * speed) % (W + 90)) - 45;
+                const w = 10 + u * 46;
+                ctx.fillStyle = i % 3 === 0 ? 'rgba(226,246,252,0.34)' : 'rgba(150,206,222,0.26)';
+                ctx.fillRect(x, y, w, 1 + u * 2);
+            }
+            // the sun's glitter path
+            ctx.globalCompositeOperation = 'lighter';
+            for (let i = 0; i < 34; i++) {
+                const u = i / 34;
+                const y = HZ + 4 + Math.pow(u, 1.8) * (H - HZ);
+                const jitter = Math.sin(t * 3 + i * 2.2) * (10 + u * 60);
+                ctx.fillStyle = `rgba(255,244,206,${0.30 * (1 - u * 0.6)})`;
+                ctx.fillRect(470 + jitter - u * 20, y, 6 + u * 22, 1 + u * 2);
+            }
+            ctx.restore();
+            ctx.globalCompositeOperation = 'source-over';
+        }
+
+        ctx.drawImage(B.props, 0, 0);
+
+        // heat shimmer over the sand: shift thin slices of the ground sideways
+        if (!river) {
+            for (let y = HZ; y < HZ + 26; y += 2) {
+                const dx = Math.sin(t * 2.3 + y * 0.5) * 1.2;
+                ctx.drawImage(this.dom.canvas, 0, y, W, 2, dx, y, W, 2);
+            }
+        }
+    },
+
+    // ---------- particles ----------
+
+    _spawnAmbient() {
+        if (!this._parts) this._parts = [];
+        const B = this._stage();
+        const want = 46;
+        while (this._parts.filter(p => p.kind === 'mote').length < want) {
+            this._parts.push({
+                kind: 'mote',
+                x: Math.random() * this.W,
+                y: this.HORIZON - 30 + Math.random() * (this.H - this.HORIZON + 30),
+                vx: 6 + Math.random() * 20,
+                vy: -3 - Math.random() * 9,
+                life: 3 + Math.random() * 6, age: 0,
+                r: Math.random() < 0.25 ? 2 : 1,
+                warm: B.key !== 'river'
+            });
+        }
+    },
+
+    // A hit: dust off the ground, sparks off the bronze, and a ring.
+    burst(x, y, colour) {
+        if (!this._parts) this._parts = [];
+        for (let i = 0; i < 26; i++) {
+            const a = -Math.PI * 0.15 - Math.random() * Math.PI * 0.7;
+            const sp = 60 + Math.random() * 190;
+            this._parts.push({
+                kind: 'spark', x, y,
+                vx: Math.cos(a) * sp * (Math.random() < 0.5 ? -1 : 1),
+                vy: Math.sin(a) * sp,
+                life: 0.3 + Math.random() * 0.5, age: 0,
+                r: Math.random() < 0.3 ? 2 : 1, colour
+            });
+        }
+        for (let i = 0; i < 16; i++) {
+            const a = Math.random() * Math.PI * 2;
+            this._parts.push({
+                kind: 'dust', x: x + Math.cos(a) * 10, y: y + 6 + Math.random() * 8,
+                vx: Math.cos(a) * (24 + Math.random() * 60),
+                vy: -12 - Math.random() * 34,
+                life: 0.5 + Math.random() * 0.6, age: 0,
+                r: 2 + Math.random() * 3
+            });
+        }
+        this._rings = this._rings || [];
+        this._rings.push({ x, y, age: 0, life: 0.42, colour });
+    },
+
+    _stepParticles(dt) {
+        this._spawnAmbient();
+        const keep = [];
+        for (const p of this._parts) {
+            p.age += dt;
+            if (p.age >= p.life) continue;
+            p.x += p.vx * dt;
+            p.y += p.vy * dt;
+            if (p.kind === 'mote') {
+                p.vy += Math.sin(this._t * 1.4 + p.x * 0.02) * 3 * dt;
+                if (p.x > this.W + 6) p.x = -6;
+            } else if (p.kind === 'spark') {
+                p.vy += 520 * dt; p.vx *= 0.97;
+            } else {
+                p.vy += 90 * dt; p.vx *= 0.94; p.r += dt * 6;
+            }
+            keep.push(p);
+        }
+        this._parts = keep;
+        this._rings = (this._rings || []).filter(r => (r.age += dt) < r.life);
+    },
+
+    _drawParticles(ctx) {
+        for (const p of this._parts) {
+            const u = p.age / p.life;
+            if (p.kind === 'mote') {
+                const fade = Math.sin(u * Math.PI);
+                ctx.fillStyle = p.warm ? `rgba(255,238,196,${0.4 * fade})`
+                                       : `rgba(214,240,250,${0.4 * fade})`;
+                ctx.fillRect(p.x | 0, p.y | 0, p.r, p.r);
+            } else if (p.kind === 'dust') {
+                ctx.fillStyle = `rgba(198,168,120,${0.34 * (1 - u)})`;
+                ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+            }
+        }
+        // sparks are additive so they punch through the dust
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        for (const p of this._parts) {
+            if (p.kind !== 'spark') continue;
+            const u = p.age / p.life;
+            ctx.fillStyle = p.colour || `rgba(255,226,150,${1 - u})`;
+            ctx.globalAlpha = 1 - u;
+            ctx.fillRect(p.x | 0, p.y | 0, p.r, p.r);
+            ctx.fillStyle = 'rgba(255,250,220,0.5)';
+            ctx.fillRect(p.x | 0, p.y | 0, 1, 1);
+        }
+        for (const r of this._rings || []) {
+            const u = r.age / r.life;
+            ctx.globalAlpha = (1 - u) * 0.55;
+            ctx.strokeStyle = r.colour || 'rgba(255,236,180,1)';
+            ctx.lineWidth = 3 * (1 - u) + 0.6;
+            ctx.beginPath();
+            ctx.ellipse(r.x, r.y, 12 + u * 74, (12 + u * 74) * 0.42, 0, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        ctx.restore();
+        ctx.globalAlpha = 1;
+    },
+
+    // ---------- post ----------
+    //
+    // A cheap bloom: shrink the frame, square it so only bright pixels
+    // survive, blur it, and add it back. Then a vignette to hold the eye in
+    // the middle of the frame.
+
+    _post(ctx) {
+        const W = this.W, H = this.H, bw = W >> 2, bh = H >> 2;
+        if (!this._bl1) {
+            this._bl1 = this._layer(bw, bh, () => {});
+            this._bl2 = this._layer(bw, bh, () => {});
+            this._vig = this._layer(W, H, (g) => {
+                const v = g.createRadialGradient(W * 0.5, H * 0.46, H * 0.28, W * 0.5, H * 0.5, H * 0.86);
+                v.addColorStop(0, 'rgba(0,0,0,0)');
+                v.addColorStop(1, 'rgba(16,8,22,0.5)');
+                g.fillStyle = v; g.fillRect(0, 0, W, H);
+            });
+        }
+        const a = this._bl1.getContext('2d'), b2 = this._bl2.getContext('2d');
+        a.globalCompositeOperation = 'source-over';
+        a.clearRect(0, 0, bw, bh);
+        a.imageSmoothingEnabled = true;
+        a.drawImage(this.dom.canvas, 0, 0, bw, bh);
+
+        b2.globalCompositeOperation = 'source-over';
+        b2.clearRect(0, 0, bw, bh);
+        b2.drawImage(this._bl1, 0, 0);
+        b2.globalCompositeOperation = 'multiply';
+        b2.drawImage(this._bl1, 0, 0);       // squared: darks fall away
+        b2.drawImage(this._bl1, 0, 0);       // cubed: only real highlights left
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.3;
+        ctx.imageSmoothingEnabled = true;
+        if ('filter' in ctx) ctx.filter = 'blur(5px)';
+        ctx.drawImage(this._bl2, 0, 0, W, H);
+        if ('filter' in ctx) ctx.filter = 'none';
+        ctx.restore();
+
+        ctx.drawImage(this._vig, 0, 0);
+        ctx.imageSmoothingEnabled = false;
+    },
+
+    // Where each fighter stands. The foe is set further up the plain and drawn
+    // smaller, so the depth is real rather than two sprites side by side.
+    MARKS: {
+        hero: { x: 176, y: 348, scale: 1 },
+        foe:  { x: 470, y: 250, scale: 0.78 }
+    },
+
+    // Where a fighter's chest is, in screen space — for aiming hit effects.
+    _chestOf(side) {
+        const m = this.MARKS[side];
+        return { x: m.x, y: m.y - 100 * m.scale };
+    },
+
+    hitAt(side) {
+        const p = this._chestOf(side);
+        const w = side === 'hero' ? this.hero : this.foe;
+        const c = w && w.palette ? w.palette.metal : '#ffe6a0';
+        this.burst(p.x, p.y, c);
     },
 
     _draw() {
         const ctx = this.ctx, t = this._t;
+        ctx.imageSmoothingEnabled = false;
+        this._stepParticles(this._dt || 0.016);
+
         if (this.scene !== 'battle' && this.scene !== 'boon') {
-            // a quiet plain behind the menus
-            const g = ctx.createLinearGradient(0, 0, 0, this.H);
-            g.addColorStop(0, '#2b2340'); g.addColorStop(1, '#6b4a52');
-            ctx.fillStyle = g; ctx.fillRect(0, 0, this.W, this.H);
-            ctx.fillStyle = 'rgba(255,220,160,0.10)';
-            for (let i = 0; i < 60; i++) {
-                const x = (i * 97) % this.W, y = (i * 53) % this.H;
-                ctx.fillRect(x, y, 1, 1);
-            }
+            // A quiet dusk plain behind the menus, using the same sky machinery
+            // so the game never shows a flat rectangle.
+            const B = this._stage();
+            ctx.drawImage(B.sky, 0, 0);
+            const cw = B.clouds.width, off = (t * 6) % cw;
+            ctx.globalAlpha = 0.5;
+            ctx.drawImage(B.clouds, -off, 20);
+            ctx.drawImage(B.clouds, cw - off, 20);
+            ctx.globalAlpha = 1;
+            ctx.drawImage(B.far, 0, 0);
+            ctx.drawImage(B.mid, 0, 0);
+            ctx.drawImage(B.ground, 0, 0);
+            ctx.drawImage(B.ranks, 0, 0);
+            ctx.drawImage(B.props, 0, 0);
+            ctx.fillStyle = 'rgba(24,14,34,0.55)';
+            ctx.fillRect(0, 0, this.W, this.H);
+            this._drawParticles(ctx);
+            this._post(ctx);
             return;
         }
 
         ctx.save();
         if (this.shake > 0) {
-            ctx.translate((Math.random() - 0.5) * 6 * this.shake, (Math.random() - 0.5) * 5 * this.shake);
+            ctx.translate((Math.random() - 0.5) * 11 * this.shake, (Math.random() - 0.5) * 9 * this.shake);
             this.shake = Math.max(0, this.shake - 0.05);
         }
         this.drawBackground(ctx, t);
-        if (this.foe)  this.drawWarrior(ctx, this.foe.palette,  this.foePose,  -1, 278, 108, t, 'foe');
-        if (this.hero) this.drawWarrior(ctx, this.hero.palette, this.heroPose,  1, 104, 190, t, 'hero');
+
+        const river = this._stageKey() === 'river';
+        const haze = this._stage().S.haze;
+        const MF = this.MARKS.foe, MH = this.MARKS.hero;
+        if (this.foe) {
+            this.drawWarrior(ctx, this.foe.palette, this.foePose, -1, MF.x, MF.y, t, 'foe', {
+                scale: MF.scale,
+                id: this.foe.name,
+                haze: this._mix(haze, '#ffffff', 0.1) + '24',
+                reflect: river
+            });
+        }
+        if (this.hero) {
+            this.drawWarrior(ctx, this.hero.palette, this.heroPose, 1, MH.x, MH.y, t, 'hero', {
+                scale: MH.scale,
+                id: this.hero.name,
+                reflect: river
+            });
+        }
+        this._drawParticles(ctx);
         ctx.restore();
 
         if (this.flash > 0) {
-            ctx.fillStyle = `rgba(255,240,190,${this.flash * 0.75})`;
+            ctx.fillStyle = `rgba(255,240,190,${this.flash * 0.7})`;
             ctx.fillRect(0, 0, this.W, this.H);
             this.flash = Math.max(0, this.flash - 0.045);
         }
+        this._post(ctx);
     },
 
     // Scale to the box flexbox actually handed the stage, so the canvas and the
@@ -1036,9 +2000,11 @@ const Iliad = {
         const cw = box.clientWidth - 8, ch = box.clientHeight - 8;
         if (cw <= 0 || ch <= 0) return;
         const raw = Math.min(cw / this.W, ch / this.H);
-        // Whole-number scaling keeps the pixels square; below 1:1 we have to
-        // accept a fractional scale rather than crop the battlefield.
-        const s = raw >= 1 ? Math.floor(raw) : raw;
+        // Snap to whole numbers only once there is room for a clean 2x. At 640
+        // wide the integer rule alone would pin most laptops to 1:1 and waste
+        // half the stage, and nearest-neighbour artefacts at this pixel density
+        // are far less visible than a battlefield two thirds the size.
+        const s = raw >= 2 ? Math.floor(raw) : raw;
         const w = Math.floor(this.W * s), h = Math.floor(this.H * s);
         if (this._fitW === w && this._fitH === h) return;
         this._fitW = w; this._fitH = h;
