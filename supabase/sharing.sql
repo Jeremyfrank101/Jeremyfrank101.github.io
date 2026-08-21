@@ -341,3 +341,6 @@ create policy project_notes_delete on public.project_notes
     for delete to authenticated using (user_id = auth.uid());
 
 revoke all on public.project_notes from anon;
+
+-- ============================================================ cozyhealth ----
+-- The web build of CozyHealth. See supabase/cozyhealth.sql.

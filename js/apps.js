@@ -18,6 +18,14 @@ const Apps = {
             grad: ['#f2734d', '#f2b340']
         },
         {
+            id: 'health',
+            name: 'CozyHealth',
+            tagline: 'Food, movement & mind',
+            blurb: 'Log meals with real macros, track workouts and measurements, and check in on mood, sleep and meditation.',
+            icon: '🌿',
+            grad: ['#5cb98a', '#2f8f9e']
+        },
+        {
             id: 'mali',
             name: 'Sands of Mali',
             tagline: '3D desert trading',
@@ -38,6 +46,7 @@ const Apps = {
     screens: {
         picker:   'picker-screen',
         cozyhome: 'app-screen',
+        health:   'health-screen',
         mali:     'mali-screen',
         highfive: 'highfive-screen'
     },
@@ -91,6 +100,9 @@ const Apps = {
     _setup(id) {
         if (id === 'cozyhome') {
             App.render();
+        } else if (id === 'health') {
+            const host = document.getElementById('health-host');
+            if (host) CozyHealth.mount(host);
         } else if (id === 'mali') {
             const host = document.getElementById('mali-host');
             if (host) Game.mount(host);
@@ -101,7 +113,8 @@ const Apps = {
     },
 
     _teardown(id) {
-        if (id === 'mali') Game.unmount();
+        if (id === 'health') CozyHealth.unmount();
+        else if (id === 'mali') Game.unmount();
         else if (id === 'highfive') HighFive.unmount();
     },
 
