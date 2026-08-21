@@ -945,7 +945,7 @@ const Modal = {
         const currentTheme = Store.getTheme();
         const themeList = Object.entries(THEMES).map(([name, t]) => `
             <button class="theme-option ${name === currentTheme ? 'active' : ''}" data-theme="${name}" onclick="Modal._selectTheme('${name}')">
-                <div class="theme-emoji-bubble" style="background:linear-gradient(145deg,${t.headerGrad[0]},${t.headerGrad[1]})">
+                <div class="theme-emoji-bubble" style="background:rgb(${t.accent})">
                     <span class="theme-emoji">${t.icon}</span>
                 </div>
                 <span class="theme-name">${name}</span>

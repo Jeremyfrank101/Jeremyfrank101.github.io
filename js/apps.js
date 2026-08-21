@@ -15,7 +15,7 @@ const Apps = {
             tagline: 'Home inventory & projects',
             blurb: 'Track what you own room by room, plan projects, and share a home with the people you live with.',
             icon: '🏡',
-            grad: ['#f2734d', '#f2b340']
+            color: '#f2734d'
         },
         {
             id: 'health',
@@ -23,7 +23,7 @@ const Apps = {
             tagline: 'Food, movement & mind',
             blurb: 'Log meals with real macros, track workouts and measurements, and check in on mood, sleep and meditation.',
             icon: '🌿',
-            grad: ['#5cb98a', '#2f8f9e']
+            color: '#3f9e78'
         },
         {
             id: 'mali',
@@ -31,7 +31,7 @@ const Apps = {
             tagline: '3D desert trading',
             blurb: 'Timbuktu, 1325. Provision a caravan, ride the Sahara, and deliver six commissions before the thirst takes you.',
             icon: '🐪',
-            grad: ['#d08a3c', '#8a5a2a']
+            color: '#c07f34'
         },
         {
             id: 'highfive',
@@ -39,7 +39,7 @@ const Apps = {
             tagline: 'Multiplayer hangout',
             blurb: 'Pick a sprite and wander a room with everyone else online right now. Walk into someone to high five them.',
             icon: '🙌',
-            grad: ['#4d8cf2', '#a06ae6']
+            color: '#6a7ae8'
         }
     ],
 
@@ -66,7 +66,7 @@ const Apps = {
         if (!grid) return;
         grid.innerHTML = this.LIST.map(a => `
             <button class="app-card" data-app="${a.id}">
-                <span class="app-card-icon" style="background:linear-gradient(145deg, ${a.grad[0]}, ${a.grad[1]})">${a.icon}</span>
+                <span class="app-card-icon" style="background:${a.color}">${a.icon}</span>
                 <span class="app-card-body">
                     <span class="app-card-name">${a.name}</span>
                     <span class="app-card-tagline">${a.tagline}</span>

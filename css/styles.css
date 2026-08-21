@@ -352,12 +352,20 @@ body {
 /* ============ HEADER ============ */
 
 #app-header {
-    background: linear-gradient(to right, var(--header-grad-start), var(--header-grad-end));
+    background: var(--accent);
     color: white;
     position: sticky;
     top: 0;
     z-index: 100;
     padding: env(safe-area-inset-top, 0) 0 0 0;
+}
+
+/* The back and + buttons belong together on the left; space-between alone
+   pushed them apart into an awkward gap. */
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 
 .header-content {
@@ -1150,7 +1158,7 @@ body {
     align-items: center;
     gap: 12px;
     padding: 12px 16px;
-    background: linear-gradient(to right, var(--header-grad-start), var(--header-grad-end));
+    background: var(--accent);
     color: white;
 }
 
