@@ -14,9 +14,10 @@ const Game = {
     },
 
     // Called by App after the container HTML is in the DOM.
-    mount() {
-        const host = document.getElementById('game-host');
+    mount(hostEl) {
+        const host = hostEl || document.getElementById('game-host');
         if (!host) return;
+        this._host = host;
 
         if (this.failed) { this._renderError(host); return; }
 
@@ -31,14 +32,14 @@ const Game = {
                 this.loaded = true;
                 this.loading = false;
                 // The tab may have been switched away from while loading.
-                const current = document.getElementById('game-host');
+                const current = this._host;
                 if (current) DesertGame.mount(current);
             })
             .catch(err => {
                 this.loading = false;
                 this.failed = true;
                 console.error('[Game] failed to load the desert game', err);
-                const current = document.getElementById('game-host');
+                const current = this._host;
                 if (current) this._renderError(current);
             });
     },

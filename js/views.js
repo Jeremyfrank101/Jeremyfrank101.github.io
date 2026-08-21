@@ -330,7 +330,6 @@ const Views = {
                         <li><strong>Room</strong> — Browse items organized by room and sub-room</li>
                         <li><strong>Type</strong> — Browse items grouped by type (Tool, Furniture, etc.)</li>
                         <li><strong>Projects</strong> — See all open and completed projects</li>
-                        <li><strong>Game</strong> — <em>Sands of Mali</em>, a 3D desert survival game set in Timbuktu in 1325. Provision a caravan, buy a camel, take a commission, and try the Sahara</li>
                         <li><strong>Info</strong> — You are here!</li>
                     </ul>
                 </div>

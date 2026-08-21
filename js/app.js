@@ -9,6 +9,7 @@ const App = {
         // default while the session and preferences load.
         ThemeEngine.init();
         Modal.init();
+        Apps.init();
         this.bindEvents();
 
         if (!Auth.configured()) {
@@ -46,10 +47,12 @@ const App = {
     async _doCheckAuth() {
         const user = Auth.getUser();
         document.getElementById('auth-screen').classList.toggle('hidden', !!user);
-        document.getElementById('app-screen').classList.toggle('hidden', !user);
 
         if (!user) {
-            Game.unmount();
+            // Hide every app screen, not just CozyHome's.
+            Object.values(Apps.screens).forEach(id =>
+                document.getElementById(id)?.classList.add('hidden'));
+            Apps.reset();
             Sync.reset();
             // Must clear, or signing back in as the same account matches the
             // stale marker, skips hydration, and shows an empty house while
@@ -68,7 +71,9 @@ const App = {
             this._hydratedFor = okData ? user.id : null;
             ThemeEngine.apply(Store.getTheme());  // theme is per-account
         }
-        this.render();
+        // Land on the picker rather than dropping straight into one app.
+        if (!Apps.current) Apps.show('picker');
+        else if (Apps.current === 'cozyhome') this.render();
     },
 
     renderSyncStatus(status) {
@@ -255,8 +260,7 @@ const App = {
         // empty when we simply haven't looked yet is worse than saying nothing.
         if (user && this._hydratedFor !== user.id) {
             emptyState.classList.add('hidden');
-            if (!(this.currentFilter === 'game' && Game.isLive())) {
-                Game.unmount();
+            {
                 container.innerHTML = Sync.status === 'error'
                     ? `<div class="section"><div class="section-body"><div class="empty-note">
                            Couldn't load your home. <button class="btn-small" onclick="App.retryHydrate()">Try again</button>
@@ -271,13 +275,8 @@ const App = {
         const projects = Store.getProjects();
 
         const isEmpty = !items.length && !rooms.length && !projects.length;
-        const selfContainedTab = this.currentFilter === 'info' || this.currentFilter === 'game';
+        const selfContainedTab = this.currentFilter === 'info';
         emptyState.classList.toggle('hidden', !isEmpty || selfContainedTab);
-
-        // A running game owns a live WebGL canvas inside #list-container. Modals
-        // call render() when they close, and rebuilding the container would throw
-        // away the player's run, so leave it alone while it is playing.
-        if (this.currentFilter === 'game' && Game.isLive()) return;
 
         let html = '';
         switch (this.currentFilter) {
@@ -285,15 +284,11 @@ const App = {
             case 'room': html = Views.renderByRoom(); break;
             case 'type': html = Views.renderByType(); break;
             case 'projects': html = Views.renderProjects(); break;
-            case 'game': html = Game.render(); break;
             case 'info': html = Views.renderInfo(); break;
         }
         container.innerHTML = html;
 
-        // The game owns a WebGL context and a render loop, so it has to be told
-        // when its container appears and when it is torn down by the line above.
-        if (this.currentFilter === 'game') Game.mount();
-        else Game.unmount();
+
     }
 };
 
