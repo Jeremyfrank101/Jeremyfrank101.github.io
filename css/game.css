@@ -1228,3 +1228,197 @@
 
 .chx-share-list { margin-bottom: 4px; }
 .chx-share-err { color: var(--danger); font-size: 13px; margin-top: 8px; }
+
+/* ============ WRATH (ILIAD) ============ */
+
+.il-root {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: #16121f;
+    overflow-y: auto;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color: #f2e3c8;
+}
+
+.il-canvas {
+    display: block;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    flex-shrink: 0;
+    max-height: 34vh;
+    margin-top: 8px;
+    box-shadow: 0 8px 34px rgba(0,0,0,0.5);
+}
+
+.il-ui { width: 100%; max-width: 760px; padding: 10px 16px 32px; }
+
+/* battle HUD */
+.il-hud { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+
+.il-bar {
+    background: rgba(30, 22, 40, 0.85);
+    border: 2px solid #4a3a5c;
+    border-radius: 10px;
+    padding: 8px 12px;
+}
+
+.il-hero-bar { border-color: #7a5c3a; }
+.il-bar-name { font-size: 14px; font-weight: 800; letter-spacing: 0.01em; margin-bottom: 5px; }
+.il-bar-name small { font-weight: 600; opacity: 0.6; font-size: 11px; }
+
+.il-hp {
+    height: 9px;
+    border-radius: 50px;
+    background: rgba(0,0,0,0.45);
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.12);
+}
+
+.il-hp-fill { height: 100%; background: linear-gradient(90deg,#d84a3a,#e8a04a); transition: width 0.35s ease; }
+.il-hp-fill.hero { background: linear-gradient(90deg,#4aa85c,#8fd06a); }
+
+.il-favour {
+    position: relative;
+    height: 15px;
+    margin-top: 6px;
+    border-radius: 50px;
+    background: rgba(0,0,0,0.45);
+    overflow: hidden;
+    border: 1px solid rgba(255,220,140,0.25);
+}
+
+.il-favour-fill { height: 100%; background: linear-gradient(90deg,#8a6ad0,#f2d060); transition: width 0.4s ease; }
+.il-favour span {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 8.5px; font-weight: 800; letter-spacing: 0.1em;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+}
+
+.il-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.il-tag {
+    font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em;
+    padding: 2px 7px; border-radius: 50px; background: rgba(255,255,255,0.14);
+}
+.il-tag.il-type { color: #17121d; }
+.il-guarding { background: #4a7fd0; } .il-raging { background: #d0603a; }
+.il-dazed { background: #9a7fd0; } .il-burning { background: #d08a3a; }
+.il-exposed { background: #d04a7f; } .il-evading { background: #4ad0b0; }
+
+.il-log {
+    background: rgba(12, 9, 18, 0.9);
+    border: 2px solid #4a3a5c;
+    border-radius: 10px;
+    padding: 8px 13px;
+    min-height: 54px;
+    font-size: 13.5px;
+    line-height: 1.5;
+    margin-bottom: 10px;
+}
+.il-log div { opacity: 0.55; }
+.il-log div:last-child { opacity: 1; font-weight: 600; }
+
+.il-moves { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.il-moves.busy { opacity: 0.55; pointer-events: none; }
+
+.il-move {
+    display: flex; flex-direction: column; gap: 2px;
+    text-align: left;
+    padding: 10px 13px;
+    border: 2px solid #5c4a70;
+    border-radius: 10px;
+    background: rgba(40, 30, 55, 0.9);
+    color: #f2e3c8;
+    font-family: inherit;
+    cursor: pointer;
+    transition: transform 0.12s, border-color 0.18s, background 0.18s;
+}
+
+.il-move:hover:not(:disabled) { transform: translateY(-2px); border-color: #d0a24a; background: rgba(58,44,78,0.95); }
+.il-move:disabled { opacity: 0.45; cursor: default; }
+.il-move-name { font-size: 13.5px; font-weight: 800; }
+.il-move-meta { font-size: 10.5px; opacity: 0.72; }
+
+.il-ult { grid-column: 1 / -1; border-color: #6a5a3a; }
+.il-ult.ready {
+    border-color: #f2d060;
+    background: linear-gradient(90deg, rgba(120,80,180,0.5), rgba(200,150,60,0.4));
+    animation: ilPulse 1.6s ease-in-out infinite;
+}
+@keyframes ilPulse { 0%,100% { box-shadow: 0 0 0 rgba(242,208,96,0); } 50% { box-shadow: 0 0 16px rgba(242,208,96,0.45); } }
+
+/* panels */
+.il-panel { text-align: center; padding: 8px 0 20px; }
+.il-panel h2 { font-size: 30px; font-weight: 800; letter-spacing: 0.06em; margin-bottom: 6px; }
+.il-sub { font-size: 14px; opacity: 0.72; line-height: 1.5; margin-bottom: 16px; max-width: 60ch; margin-left: auto; margin-right: auto; }
+
+.il-heroes { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; }
+
+.il-hero {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 14px 12px 16px;
+    border: 2px solid #5c4a70;
+    border-radius: 14px;
+    background: rgba(34, 26, 48, 0.9);
+    color: #f2e3c8;
+    font-family: inherit;
+    cursor: pointer;
+    transition: transform 0.15s, border-color 0.2s;
+}
+.il-hero:hover { transform: translateY(-3px); border-color: #d0a24a; }
+.il-hero canvas { image-rendering: pixelated; margin-bottom: 4px; }
+.il-hero-name { font-size: 19px; font-weight: 800; }
+.il-hero-ep { font-size: 11px; font-style: italic; opacity: 0.7; }
+.il-hero-god { font-size: 10.5px; font-weight: 800; color: #f2d060; text-transform: uppercase; letter-spacing: 0.08em; margin: 4px 0; }
+.il-hero-blurb { font-size: 12px; line-height: 1.45; opacity: 0.62; }
+
+.il-boons { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.il-boon {
+    display: flex; flex-direction: column; gap: 3px;
+    padding: 14px 12px;
+    border: 2px solid #6a5a3a;
+    border-radius: 12px;
+    background: rgba(46, 36, 26, 0.9);
+    color: #f2e3c8;
+    font-family: inherit;
+    cursor: pointer;
+    transition: transform 0.15s, border-color 0.2s;
+}
+.il-boon:hover { transform: translateY(-3px); border-color: #f2d060; }
+.il-boon-god { font-size: 10px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: #f2d060; }
+.il-boon-name { font-size: 15px; font-weight: 800; }
+.il-boon-desc { font-size: 12px; opacity: 0.7; line-height: 1.4; }
+
+.il-score { margin: 14px 0 18px; }
+.il-score span { display: block; font-size: 46px; font-weight: 800; color: #f2d060; line-height: 1; }
+.il-score small { font-size: 11px; letter-spacing: 0.12em; opacity: 0.6; }
+
+.il-board { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 16px; }
+.il-board th { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.5; padding: 6px 8px; text-align: left; }
+.il-board td { padding: 7px 8px; border-top: 1px solid rgba(255,255,255,0.1); }
+.il-board tr.top td { color: #f2d060; font-weight: 800; }
+
+.il-row { display: flex; gap: 10px; justify-content: center; }
+
+.il-btn {
+    padding: 12px 26px;
+    border: 2px solid #d0a24a;
+    border-radius: 50px;
+    background: rgba(200,150,60,0.22);
+    color: #f2e3c8;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: background 0.18s;
+}
+.il-btn:hover { background: rgba(200,150,60,0.4); }
+.il-ghost { border-color: #5c4a70; background: transparent; margin-top: 4px; }
+
+@media (max-width: 520px) {
+    .il-moves { grid-template-columns: 1fr; }
+    .il-panel h2 { font-size: 24px; }
+}

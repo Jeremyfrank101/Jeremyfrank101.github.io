@@ -26,6 +26,14 @@ const Apps = {
             color: '#3f9e78'
         },
         {
+            id: 'iliad',
+            name: 'Wrath',
+            tagline: 'Duels of the Iliad',
+            blurb: 'Play Achilles, Hector or Diomedes and fight the foes they faced, in Homer\'s order. Turn-based duels, divine favour, and a leaderboard of glory.',
+            icon: '\u2694\ufe0f',
+            color: '#8f4a4a'
+        },
+        {
             id: 'mali',
             name: 'Sands of Mali',
             tagline: '3D desert trading',
@@ -47,6 +55,7 @@ const Apps = {
         picker:   'picker-screen',
         cozyhome: 'app-screen',
         health:   'health-screen',
+        iliad:    'iliad-screen',
         mali:     'mali-screen',
         highfive: 'highfive-screen'
     },
@@ -103,6 +112,9 @@ const Apps = {
         } else if (id === 'health') {
             const host = document.getElementById('health-host');
             if (host) CozyHealth.mount(host);
+        } else if (id === 'iliad') {
+            const host = document.getElementById('iliad-host');
+            if (host) Iliad.mount(host);
         } else if (id === 'mali') {
             const host = document.getElementById('mali-host');
             if (host) Game.mount(host);
@@ -114,6 +126,7 @@ const Apps = {
 
     _teardown(id) {
         if (id === 'health') CozyHealth.unmount();
+        else if (id === 'iliad') Iliad.unmount();
         else if (id === 'mali') Game.unmount();
         else if (id === 'highfive') HighFive.unmount();
     },
