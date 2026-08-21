@@ -28,7 +28,7 @@ const Iliad = {
             patron: 'Thetis & Hera',
             blurb: 'The greatest of the Achaeans. His mother is a sea-nymph, his armour forged by Hephaestus, and his rage is the poem\'s first word.',
             hp: 118, atk: 24, def: 15, spd: 22,
-            palette: { skin:'#d9a06b', tunic:'#e8dcc0', armour:'#e6c15a', trim:'#f5e6a8', cape:'#b8452f', crest:'#f2e3b0', shield:'#d9b451', metal:'#cfd6dd' },
+            palette: { skin:'#c78b52', tunic:'#d6c8a4', armour:'#c9992f', trim:'#f7e9a8', cape:'#a8341f', crest:'#f0dc9a', shield:'#c79a34', metal:'#b9c2cb' },
             moves: [
                 { name: 'Pelian Ash Spear', type:'might',  power: 30, acc: 95, desc: 'The spear only he can lift.' },
                 { name: 'Swift-Footed Rush',type:'guile',  power: 20, acc: 100, effect:'first', desc: 'Strikes before the foe can set.' },
@@ -249,6 +249,7 @@ const Iliad = {
         this.turn = 'hero';
         this.heroPose = 'ready';
         this.foePose = 'ready';
+        this._poses = null;
         this.shake = 0;
         this.flash = 0;
         this.log = [`${src.name} — ${src.epithet}.`, src.line];
@@ -637,119 +638,323 @@ const Iliad = {
         fallen: { lean: 1.35,armF: 1.2, armB: 1.0, spear: 1.4,  shield: 6,  bob: 0,   knee: 8 }
     },
 
-    // A limb: a rotated rect, drawn pixel-hard.
-    _limb(ctx, x, y, w, len, angle, fill, shade) {
+    // ---------- colour ----------
+    //
+    // Flat fills read as plastic. Every material instead gets a five-step
+    // ramp whose shadows drift toward blue and whose highlights drift toward
+    // warm yellow — the hue shift is what makes bronze look like bronze
+    // rather than a brown rectangle. Ramps are cached; this is not per-frame.
+
+    _rampCache: {},
+
+    _hexToHsl(hex) {
+        const n = parseInt(hex.slice(1), 16);
+        const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+        const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+        let h = 0; const l = (mx + mn) / 2;
+        const d = mx - mn;
+        const sat = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+        if (d !== 0) {
+            if (mx === r) h = ((g - b) / d) % 6;
+            else if (mx === g) h = (b - r) / d + 2;
+            else h = (r - g) / d + 4;
+            h *= 60; if (h < 0) h += 360;
+        }
+        return [h, sat, l];
+    },
+
+    _hslToHex(h, s, l) {
+        h = ((h % 360) + 360) % 360;
+        s = Math.max(0, Math.min(1, s));
+        l = Math.max(0, Math.min(1, l));
+        const c = (1 - Math.abs(2 * l - 1)) * s;
+        const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+        const m = l - c / 2;
+        let r = 0, g = 0, b = 0;
+        if (h < 60)       { r = c; g = x; }
+        else if (h < 120) { r = x; g = c; }
+        else if (h < 180) { g = c; b = x; }
+        else if (h < 240) { g = x; b = c; }
+        else if (h < 300) { r = x; b = c; }
+        else              { r = c; b = x; }
+        const to = v => Math.round((v + m) * 255).toString(16).padStart(2, '0');
+        return '#' + to(r) + to(g) + to(b);
+    },
+
+    // Rotate a hue toward an anchor, but never far. Taking the shortest path
+    // to a distant anchor can swing a colour right across the wheel — gold
+    // "shifted toward blue" came out red the first time. A hard cap of a few
+    // degrees keeps the shift a tint rather than a change of colour.
+    _toward(h, anchor, maxDeg) {
+        const d = ((anchor - h + 540) % 360) - 180;
+        return h + Math.max(-maxDeg, Math.min(maxDeg, d));
+    },
+
+    ramp(hex) {
+        if (this._rampCache[hex]) return this._rampCache[hex];
+        const [h, s, l] = this._hexToHsl(hex);
+        const cool = 250, warm = 50;     // shadow anchor, highlight anchor
+        const r = {
+            sh2:  this._hslToHex(this._toward(h, cool, 16), Math.min(1, s * 1.22 + 0.04), Math.max(0.05, l * 0.52)),
+            sh1:  this._hslToHex(this._toward(h, cool, 8),  Math.min(1, s * 1.10 + 0.02), Math.max(0.08, l * 0.76)),
+            base: hex,
+            li1:  this._hslToHex(this._toward(h, warm, 7),  s * 0.94, Math.min(0.93, l * 1.13 + 0.04)),
+            li2:  this._hslToHex(this._toward(h, warm, 13), s * 0.82, Math.min(0.96, l * 1.24 + 0.09))
+        };
+        this._rampCache[hex] = r;
+        return r;
+    },
+
+    // ---------- parts ----------
+    //
+    // The key light sits upper-right with the sun, so every rounded form is
+    // lit on its right and falls to core shadow on its left.
+
+    // A limb: a rotated capsule shaded across its width.
+    _limb(ctx, x, y, w, len, angle, hex) {
+        const R = this.ramp(hex);
         ctx.save();
         ctx.translate(x, y);
         ctx.rotate(angle);
-        ctx.fillStyle = shade || fill;
-        ctx.fillRect(-w / 2, 0, w, len);
-        ctx.fillStyle = fill;
-        ctx.fillRect(-w / 2, 0, w - 1, len - 1);
+        ctx.fillStyle = R.sh1;  ctx.fillRect(-w / 2, 0, w, len);
+        ctx.fillStyle = R.base; ctx.fillRect(-w / 2 + 1, 0, w - 1, len);
+        ctx.fillStyle = R.li1;  ctx.fillRect(w / 2 - 2, 1, 1, len - 2);
+        ctx.fillStyle = R.sh2;  ctx.fillRect(-w / 2, len - 2, w, 2);
         ctx.restore();
     },
 
-    drawWarrior(ctx, pal, poseName, facing, cx, groundY, t) {
-        const P = this.POSES[poseName] || this.POSES.ready;
-        const breathe = Math.sin(t * 2.4) * P.bob * 0.5;
+    // A slab shaded as a cylinder: shadow edge, body, light band, rim.
+    _slab(ctx, x, y, w, h, hex, opts = {}) {
+        const R = this.ramp(hex);
+        ctx.fillStyle = R.sh1;  ctx.fillRect(x, y, w, h);
+        ctx.fillStyle = R.base; ctx.fillRect(x + 1, y, w - 1, h - 1);
+        if (!opts.flat) {
+            ctx.fillStyle = R.li1; ctx.fillRect(x + w - 3, y + 1, 2, h - 2);
+            ctx.fillStyle = R.sh2; ctx.fillRect(x, y + h - 2, w, 2);
+        }
+        if (opts.top) { ctx.fillStyle = R.li2; ctx.fillRect(x + 1, y, w - 2, 1); }
+    },
+
+    // ---------- pose state ----------
+    //
+    // Poses used to snap. Each fighter now carries an interpolated pose that
+    // eases toward the target, plus springs for the cape and crest so they
+    // lag the body and settle after it stops — the secondary motion is most
+    // of what separates "puppet" from "alive".
+
+    _poseState(key) {
+        if (!this._poses) this._poses = {};
+        if (!this._poses[key]) {
+            this._poses[key] = { ...this.POSES.ready, capeV: 0, capeX: 0, crestV: 0, crestX: 0, prevLean: 0 };
+        }
+        return this._poses[key];
+    },
+
+    _advancePose(key, target, dt) {
+        const st = this._poseState(key);
+        const T = this.POSES[target] || this.POSES.ready;
+        // Snappy into a strike, softer on the way back — anticipation reads
+        // better when the outgoing motion is faster than the return.
+        const goingOut = target === 'attack' || target === 'cast' || target === 'hurt';
+        const k = Math.min(1, dt * (goingOut ? 22 : 9));
+        for (const p of ['lean','armF','armB','spear','shield','bob','knee']) {
+            st[p] += (T[p] - st[p]) * k;
+        }
+        // cape and crest chase the body with a damped spring
+        const drive = (st.lean - st.prevLean) * 90;
+        st.prevLean = st.lean;
+        st.capeV  += (-st.capeX * 46 - st.capeV * 7.5 - drive * 1.6) * dt;
+        st.capeX  += st.capeV * dt;
+        st.crestV += (-st.crestX * 70 - st.crestV * 8.5 - drive * 1.1) * dt;
+        st.crestX += st.crestV * dt;
+        return st;
+    },
+
+    drawWarrior(ctx, pal, poseName, facing, cx, groundY, t, key) {
+        const P = key ? this._advancePose(key, poseName, this._dt || 0.016)
+                      : { ...(this.POSES[poseName] || this.POSES.ready), capeX: 0, crestX: 0 };
+
+        // Render to a buffer so the rim light can be derived from the real
+        // silhouette rather than guessed per part.
+        const BW = 96, BH = 110, ox = 48, oy = 96;
+        if (!this._buf) {
+            this._buf = document.createElement('canvas');
+            this._buf.width = BW; this._buf.height = BH;
+            this._bufCtx = this._buf.getContext('2d');
+            this._rim = document.createElement('canvas');
+            this._rim.width = BW; this._rim.height = BH;
+            this._rimCtx = this._rim.getContext('2d');
+        }
+        const b = this._bufCtx;
+        b.clearRect(0, 0, BW, BH);
+        b.imageSmoothingEnabled = false;
+        b.save();
+        b.translate(ox, oy);
+
         const fallen = poseName === 'fallen';
+        if (fallen) { b.rotate(-P.lean); b.translate(-6, 6); }
+        else b.rotate(P.lean * 0.12);
 
-        ctx.save();
-        ctx.translate(cx, groundY);
-        ctx.scale(facing, 1);
-        if (fallen) { ctx.rotate(-P.lean); ctx.translate(-6, 6); }
-        else ctx.rotate(P.lean * 0.12);
-
+        const breathe = Math.sin(t * 2.4) * P.bob * 0.5;
         const hipY = -26 + breathe;
         const shoulderY = -44 + breathe;
 
-        // shadow
-        ctx.fillStyle = 'rgba(0,0,0,0.28)';
-        ctx.beginPath(); ctx.ellipse(0, 1, 13, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+        // cape: silhouette driven by the spring, not a fixed sine
+        const capeR = this.ramp(pal.cape);
+        const sway = Math.sin(t * 1.7) * 1.6 + P.capeX * 26;
+        b.fillStyle = capeR.sh1;
+        b.beginPath();
+        b.moveTo(-3, shoulderY + 2);
+        b.lineTo(-14 - sway, hipY + 11);
+        b.lineTo(-5 - sway * 0.5, hipY + 13);
+        b.lineTo(2, shoulderY + 4);
+        b.closePath(); b.fill();
+        b.fillStyle = capeR.base;
+        b.beginPath();
+        b.moveTo(-3, shoulderY + 3);
+        b.lineTo(-11 - sway * 0.8, hipY + 9);
+        b.lineTo(-5 - sway * 0.4, hipY + 11);
+        b.lineTo(1, shoulderY + 4);
+        b.closePath(); b.fill();
 
-        // cape behind, drifting
-        const sway = Math.sin(t * 1.7) * 2;
-        ctx.fillStyle = pal.cape;
-        ctx.beginPath();
-        ctx.moveTo(-3, shoulderY + 2);
-        ctx.lineTo(-13 - sway, hipY + 10);
-        ctx.lineTo(-6 - sway * 0.5, hipY + 12);
-        ctx.lineTo(2, shoulderY + 4);
-        ctx.closePath(); ctx.fill();
-
-        // legs (greaves)
-        this._limb(ctx, -4, hipY, 6, 24 - P.knee, 0.10 + P.knee * 0.03, pal.skin, '#00000033');
-        this._limb(ctx,  4, hipY, 6, 24 - P.knee, -0.14 - P.knee * 0.02, pal.skin, '#00000033');
-        ctx.fillStyle = pal.metal;
-        ctx.fillRect(-7, hipY + 15, 6, 5);
-        ctx.fillRect(2, hipY + 15, 6, 5);
+        // legs
+        this._limb(b, -4, hipY, 6, 24 - P.knee, 0.10 + P.knee * 0.03, pal.skin);
+        this._limb(b,  4, hipY, 6, 24 - P.knee, -0.14 - P.knee * 0.02, pal.skin);
+        this._slab(b, -7, hipY + 15, 6, 5, pal.metal);
+        this._slab(b,  2, hipY + 15, 6, 5, pal.metal);
 
         // tunic
-        ctx.fillStyle = pal.tunic;
-        ctx.fillRect(-9, hipY - 2, 18, 10);
-        ctx.fillStyle = 'rgba(0,0,0,0.13)';
-        ctx.fillRect(-9, hipY + 6, 18, 2);
+        this._slab(b, -9, hipY - 2, 18, 10, pal.tunic);
+        const tunR = this.ramp(pal.tunic);
+        b.fillStyle = tunR.sh2;
+        for (let i = 0; i < 4; i++) b.fillRect(-7 + i * 4, hipY + 1, 1, 7);   // folds
 
         // cuirass
-        ctx.fillStyle = pal.armour;
-        ctx.fillRect(-9, shoulderY, 18, 20);
-        ctx.fillStyle = pal.trim;
-        ctx.fillRect(-9, shoulderY, 18, 3);
-        ctx.fillRect(-9, shoulderY + 17, 18, 3);
-        ctx.fillStyle = 'rgba(0,0,0,0.15)';
-        ctx.fillRect(3, shoulderY + 3, 6, 14);        // form shading
-        ctx.fillStyle = 'rgba(255,255,255,0.16)';
-        ctx.fillRect(-8, shoulderY + 4, 4, 12);
+        this._slab(b, -9, shoulderY, 18, 20, pal.armour, { top: true });
+        const armR = this.ramp(pal.armour), trimR = this.ramp(pal.trim);
+        b.fillStyle = trimR.base; b.fillRect(-9, shoulderY, 18, 2);
+        b.fillStyle = trimR.li1;  b.fillRect(-9, shoulderY, 18, 1);
+        b.fillStyle = trimR.base; b.fillRect(-9, shoulderY + 17, 18, 3);
+        b.fillStyle = armR.li2;   b.fillRect(4, shoulderY + 4, 2, 11);        // specular
+        b.fillStyle = armR.sh2;   b.fillRect(-8, shoulderY + 5, 3, 10);       // core shadow
+        b.fillStyle = armR.sh1;   b.fillRect(-2, shoulderY + 6, 3, 8);        // pectoral line
 
-        // back arm + shield
-        this._limb(ctx, -7, shoulderY + 4, 5, 15, P.armB, pal.skin, '#00000033');
-        const shx = -13 - P.shield, shy = shoulderY + 6;
-        ctx.fillStyle = pal.shield;
-        ctx.beginPath(); ctx.arc(shx, shy, 11, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = pal.trim;
-        ctx.beginPath(); ctx.arc(shx, shy, 11, 0, Math.PI * 2); ctx.lineWidth = 2; ctx.strokeStyle = pal.trim; ctx.stroke();
-        ctx.fillStyle = 'rgba(0,0,0,0.25)';
-        ctx.beginPath(); ctx.arc(shx, shy, 4, 0, Math.PI * 2); ctx.fill();
+        // back arm + hoplon
+        this._limb(b, -7, shoulderY + 4, 5, 15, P.armB, pal.skin);
+        const shx = -13 - P.shield, shy = shoulderY + 6, shR = this.ramp(pal.shield);
+        b.fillStyle = shR.sh1; b.beginPath(); b.arc(shx, shy, 11, 0, Math.PI * 2); b.fill();
+        b.fillStyle = shR.base; b.beginPath(); b.arc(shx + 0.5, shy - 0.5, 10, 0, Math.PI * 2); b.fill();
+        b.fillStyle = shR.li1; b.beginPath(); b.arc(shx + 2, shy - 2, 6.5, 0, Math.PI * 2); b.fill();
+        b.fillStyle = shR.li2; b.beginPath(); b.arc(shx + 3, shy - 3, 3, 0, Math.PI * 2); b.fill();
+        b.strokeStyle = trimR.base; b.lineWidth = 1.5;
+        b.beginPath(); b.arc(shx, shy, 10.5, 0, Math.PI * 2); b.stroke();
+        b.fillStyle = shR.sh2; b.beginPath(); b.arc(shx - 1, shy + 1, 3, 0, Math.PI * 2); b.fill();
 
         // front arm + spear
-        this._limb(ctx, 7, shoulderY + 4, 5, 14, P.armF, pal.skin, '#00000033');
-        ctx.save();
-        ctx.translate(9, shoulderY + 6);
-        ctx.rotate(P.spear);
-        ctx.fillStyle = '#7a5a34';
-        ctx.fillRect(-1.5, -30, 3, 46);
-        ctx.fillStyle = pal.metal;
-        ctx.beginPath();
-        ctx.moveTo(0, -38); ctx.lineTo(4, -28); ctx.lineTo(-4, -28);
-        ctx.closePath(); ctx.fill();
-        ctx.restore();
+        this._limb(b, 7, shoulderY + 4, 5, 14, P.armF, pal.skin);
+        b.save();
+        b.translate(9, shoulderY + 6);
+        b.rotate(P.spear);
+        const shaft = this.ramp('#7a5a34'), tip = this.ramp(pal.metal);
+        b.fillStyle = shaft.sh1;  b.fillRect(-1.5, -30, 3, 46);
+        b.fillStyle = shaft.base; b.fillRect(-1.5, -30, 2, 46);
+        b.fillStyle = tip.sh1;
+        b.beginPath(); b.moveTo(0, -39); b.lineTo(4.5, -28); b.lineTo(-4.5, -28); b.closePath(); b.fill();
+        b.fillStyle = tip.li2;
+        b.beginPath(); b.moveTo(0, -37); b.lineTo(2, -29); b.lineTo(-0.5, -29); b.closePath(); b.fill();
+        b.restore();
 
         // head
-        ctx.fillStyle = pal.skin;
-        ctx.fillRect(-5, shoulderY - 11, 10, 11);
-        ctx.fillStyle = 'rgba(0,0,0,0.18)';
-        ctx.fillRect(2, shoulderY - 11, 3, 11);
+        const skinR = this.ramp(pal.skin);
+        b.fillStyle = skinR.sh1;  b.fillRect(-5, shoulderY - 11, 10, 11);
+        b.fillStyle = skinR.base; b.fillRect(-5, shoulderY - 11, 8, 11);
+        b.fillStyle = skinR.li1;  b.fillRect(1, shoulderY - 10, 2, 6);
 
-        // helmet: dome, nose guard, cheek pieces, crest
-        ctx.fillStyle = pal.armour;
-        ctx.fillRect(-6, shoulderY - 14, 12, 7);
-        ctx.fillRect(-6, shoulderY - 8, 3, 7);        // cheek
-        ctx.fillRect(3, shoulderY - 8, 3, 7);
-        ctx.fillRect(-1, shoulderY - 8, 2, 6);        // nose guard
-        ctx.fillStyle = pal.trim;
-        ctx.fillRect(-6, shoulderY - 14, 12, 2);
-        // eyes in the shadow of the helm
-        ctx.fillStyle = '#1a1420';
-        ctx.fillRect(-4, shoulderY - 6, 2, 2);
-        ctx.fillRect(1, shoulderY - 6, 2, 2);
+        // helmet
+        b.fillStyle = armR.sh1;  b.fillRect(-6, shoulderY - 15, 12, 8);
+        b.fillStyle = armR.base; b.fillRect(-6, shoulderY - 15, 11, 7);
+        b.fillStyle = armR.li2;  b.fillRect(1, shoulderY - 14, 3, 2);
+        this._slab(b, -6, shoulderY - 8, 3, 7, pal.armour);
+        this._slab(b,  3, shoulderY - 8, 3, 7, pal.armour);
+        b.fillStyle = armR.base; b.fillRect(-1, shoulderY - 8, 2, 6);
+        b.fillStyle = trimR.li1; b.fillRect(-6, shoulderY - 15, 12, 1);
+        b.fillStyle = '#140f1c';
+        b.fillRect(-4, shoulderY - 6, 2, 2);
+        b.fillRect(1, shoulderY - 6, 2, 2);
+        b.fillStyle = 'rgba(255,240,200,0.55)';
+        b.fillRect(1, shoulderY - 6, 1, 1);
 
-        // horsehair crest, animated
-        ctx.fillStyle = pal.crest;
-        for (let i = 0; i < 9; i++) {
-            const w = 3 - Math.abs(i - 4) * 0.25;
-            const drift = Math.sin(t * 3 + i * 0.5) * 1.2;
-            ctx.fillRect(-5 + i * 1.2, shoulderY - 20 - Math.sin(i / 8 * Math.PI) * 5 + drift, w, 7);
+        // horsehair crest, lagging the head
+        const crestR = this.ramp(pal.crest);
+        // Horsehair arcs up from the brow and sweeps back over the neck, with
+        // the tail lagging further than the root.
+        for (let i = 0; i < 14; i++) {
+            const u = i / 13;
+            const lag = P.crestX * 40 * u * u;
+            const drift = Math.sin(t * 3.2 + u * 3.4) * (0.6 + u * 1.6) + lag;
+            const x = 4 - u * 13 + drift;                       // brow -> nape
+            const arc = Math.sin(u * Math.PI * 0.85) * 7;
+            const y = shoulderY - 15 - arc;
+            const len = 4 + arc * 0.7 + u * 3;
+            b.fillStyle = u < 0.3 ? crestR.li1 : (u < 0.7 ? crestR.base : crestR.sh1);
+            b.fillRect(x, y, 1.6, len);
         }
+        b.restore();
+
+        // ---- rim light ----
+        // Subtracting a copy of the silhouette shifted away from the light
+        // leaves exactly the lit edge, whatever shape the pose happens to be.
+        const r = this._rimCtx;
+        r.clearRect(0, 0, BW, BH);
+        r.globalCompositeOperation = 'source-over';
+        r.drawImage(this._buf, 0, 0);
+        r.globalCompositeOperation = 'destination-out';
+        r.drawImage(this._buf, -1, 1);               // key from upper right
+        r.globalCompositeOperation = 'source-in';
+        r.fillStyle = 'rgba(255,238,198,0.5)';       // a hint, not an outline
+        r.fillRect(0, 0, BW, BH);
+        r.globalCompositeOperation = 'source-over';
+
+        // cool bounce on the shadow side, much fainter
+        const bo = this._bounce || (this._bounce = (() => {
+            const c = document.createElement('canvas'); c.width = BW; c.height = BH; return c;
+        })());
+        const bc = bo.getContext('2d');
+        bc.clearRect(0, 0, BW, BH);
+        bc.globalCompositeOperation = 'source-over';
+        bc.drawImage(this._buf, 0, 0);
+        bc.globalCompositeOperation = 'destination-out';
+        bc.drawImage(this._buf, 1.6, -0.6);
+        bc.globalCompositeOperation = 'source-in';
+        bc.fillStyle = 'rgba(120,160,220,0.26)';
+        bc.fillRect(0, 0, BW, BH);
+        bc.globalCompositeOperation = 'source-over';
+
+        // A dark outline dilated from the silhouette. Pixel art needs this to
+        // sit on a busy background — and it is what lets the rim light read as
+        // light rather than as a white sticker edge.
+        const ol = this._outline || (this._outline = (() => {
+            const c = document.createElement('canvas'); c.width = BW; c.height = BH; return c;
+        })());
+        const oc = ol.getContext('2d');
+        oc.clearRect(0, 0, BW, BH);
+        oc.globalCompositeOperation = 'source-over';
+        for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1]]) oc.drawImage(this._buf, dx, dy);
+        oc.globalCompositeOperation = 'source-in';
+        oc.fillStyle = 'rgba(28,18,32,0.72)';
+        oc.fillRect(0, 0, BW, BH);
+        oc.globalCompositeOperation = 'source-over';
+
+        // ---- composite ----
+        ctx.save();
+        ctx.translate(cx, groundY);
+        ctx.scale(facing, 1);
+        ctx.fillStyle = 'rgba(0,0,0,0.30)';
+        ctx.beginPath(); ctx.ellipse(0, 1, 13, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.drawImage(ol, -ox, -oy);
+        ctx.drawImage(this._buf, -ox, -oy);
+        ctx.drawImage(bo, -ox, -oy);
+        ctx.drawImage(this._rim, -ox, -oy);
         ctx.restore();
     },
 
@@ -812,8 +1017,8 @@ const Iliad = {
             this.shake = Math.max(0, this.shake - 0.05);
         }
         this.drawBackground(ctx, t);
-        if (this.foe)  this.drawWarrior(ctx, this.foe.palette,  this.foePose,  -1, 278, 108, t);
-        if (this.hero) this.drawWarrior(ctx, this.hero.palette, this.heroPose,  1, 104, 190, t);
+        if (this.foe)  this.drawWarrior(ctx, this.foe.palette,  this.foePose,  -1, 278, 108, t, 'foe');
+        if (this.hero) this.drawWarrior(ctx, this.hero.palette, this.heroPose,  1, 104, 190, t, 'hero');
         ctx.restore();
 
         if (this.flash > 0) {
@@ -847,6 +1052,7 @@ const Iliad = {
         const dt = Math.min(0.05, (now - this._last) / 1000);
         this._last = now;
         this._t += dt;
+        this._dt = dt;
         this._draw();
         this._fit();
         this._raf = requestAnimationFrame(this._loop);
