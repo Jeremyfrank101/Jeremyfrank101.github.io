@@ -68,7 +68,7 @@
     <!-- Wrath (Iliad) -->
     <div id="iliad-screen" class="screen hidden">
         <header class="app-bar">
-            <button class="app-back" data-app-back title="All apps">‹ Apps</button>
+            <button class="app-back" data-app-back title="All apps" aria-label="Back to all apps">‹ Apps</button>
             <h1 class="app-bar-title">Wrath</h1>
             <span class="app-bar-spacer"></span>
         </header>
@@ -78,7 +78,7 @@
     <!-- CozyHealth -->
     <div id="health-screen" class="screen hidden">
         <header class="app-bar">
-            <button class="app-back" data-app-back title="All apps">‹ Apps</button>
+            <button class="app-back" data-app-back title="All apps" aria-label="Back to all apps">‹ Apps</button>
             <h1 class="app-bar-title">CozyHealth</h1>
             <span class="app-bar-spacer"></span>
         </header>
@@ -88,7 +88,7 @@
     <!-- CozyCookBook -->
     <div id="cookbook-screen" class="screen hidden">
         <header class="app-bar">
-            <button class="app-back" data-app-back title="All apps">‹ Apps</button>
+            <button class="app-back" data-app-back title="All apps" aria-label="Back to all apps">‹ Apps</button>
             <h1 class="app-bar-title">CozyCookBook</h1>
             <span class="app-bar-spacer"></span>
         </header>
@@ -98,7 +98,7 @@
     <!-- Sands of Mali -->
     <div id="mali-screen" class="screen hidden">
         <header class="app-bar">
-            <button class="app-back" data-app-back title="All apps">‹ Apps</button>
+            <button class="app-back" data-app-back title="All apps" aria-label="Back to all apps">‹ Apps</button>
             <h1 class="app-bar-title">Sands of Mali</h1>
             <span class="app-bar-spacer"></span>
         </header>
@@ -108,7 +108,7 @@
     <!-- High Five -->
     <div id="highfive-screen" class="screen hidden">
         <header class="app-bar">
-            <button class="app-back" data-app-back title="All apps">‹ Apps</button>
+            <button class="app-back" data-app-back title="All apps" aria-label="Back to all apps">‹ Apps</button>
             <h1 class="app-bar-title">High Five</h1>
             <span class="app-bar-spacer"></span>
         </header>
@@ -121,14 +121,13 @@
         <header id="app-header">
             <div class="header-content">
                 <div class="header-left">
-                    <button class="header-btn app-back-icon" data-app-back title="All apps">‹</button>
-                    <button id="add-menu-btn" class="header-btn" title="Add">
+                    <button class="header-btn app-back-icon" data-app-back title="All apps" aria-label="Back to all apps">‹</button>
+                    <button id="add-menu-btn" class="header-btn" title="Add" aria-label="Add something">
                         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                     </button>
                 </div>
                 <h1 class="header-title">CozyHome</h1>
-                <div id="sync-status" class="sync-status hidden" onclick="App.retrySync()"></div>
-                <button id="profile-btn" class="header-btn" title="Profile">
+                <button id="profile-btn" class="header-btn" title="Profile" aria-label="Your profile">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg>
                 </button>
             </div>
@@ -180,6 +179,9 @@
 
     <!-- Modals will be injected here -->
     <div id="modal-container"></div>
+
+    <!-- Unsaved-writes indicator. Global, because every app queues writes. -->
+    <button id="sync-status" class="sync-status hidden" onclick="App.retrySync()" aria-live="polite"></button>
 
     <script src="js/vendor/supabase.min.js"></script>
     <script src="js/auth.js"></script>

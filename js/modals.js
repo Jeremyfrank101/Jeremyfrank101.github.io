@@ -830,7 +830,7 @@ const Modal = {
                 <div class="form-section">
                     ${project.isCompleted
                         ? `<button class="btn-secondary" onclick="Store.updateProject('${projectId}',{isCompleted:false,completedAt:null});Modal.editProject('${projectId}')">↩ Reopen Project</button>`
-                        : `<button class="btn-completed" onclick="Store.updateProject('${projectId}',{isCompleted:true,completedAt:new Date().toISOString()});Modal.editProject('${projectId}')">✓ Mark as Completed</button>`}
+                        : `<button class="btn-completed" aria-label="Mark project complete" onclick="Store.updateProject('${projectId}',{isCompleted:true,completedAt:new Date().toISOString()});Modal.editProject('${projectId}')">✓ Mark as Completed</button>`}
                 </div>
                 ${this._notesSection(projectId)}
                 ${this._shareSection('project', projectId, project)}
@@ -907,7 +907,7 @@ const Modal = {
                     <p class="form-note">If you already own this item, link it to see which room it's in.</p>
                 </div>
                 <div class="form-section"><label>Options</label>
-                    <div id="diy-options">${(diy.options || []).map(o => `<div class="option-row"><textarea placeholder="Description" class="opt-desc">${this._esc(o.desc)}</textarea><input type="url" placeholder="Link (URL)" class="opt-link" value="${this._esc(o.link)}"><button class="btn-remove" onclick="this.parentElement.remove()">✕</button></div>`).join('')}</div>
+                    <div id="diy-options">${(diy.options || []).map(o => `<div class="option-row"><textarea placeholder="Description" class="opt-desc">${this._esc(o.desc)}</textarea><input type="url" placeholder="Link (URL)" class="opt-link" value="${this._esc(o.link)}"><button class="btn-remove" aria-label="Remove this row" onclick="this.parentElement.remove()">✕</button></div>`).join('')}</div>
                     <button class="btn-secondary" onclick="Modal._addOptionRow('diy-options')">+ Add Option</button>
                 </div>
                 <div class="form-section"><label>Photo</label>
@@ -1055,7 +1055,7 @@ const Modal = {
         const div = document.getElementById(containerId);
         const row = document.createElement('div');
         row.className = 'option-row';
-        row.innerHTML = '<textarea placeholder="Description" class="opt-desc"></textarea><input type="url" placeholder="Link (URL)" class="opt-link"><button class="btn-remove" onclick="this.parentElement.remove()">✕</button>';
+        row.innerHTML = '<textarea placeholder="Description" class="opt-desc"></textarea><input type="url" placeholder="Link (URL)" class="opt-link"><button class="btn-remove" aria-label="Remove this row" onclick="this.parentElement.remove()">✕</button>';
         div.appendChild(row);
     },
 

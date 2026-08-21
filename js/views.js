@@ -392,7 +392,7 @@ const Views = {
             <div class="row-info">
                 <div class="row-title">
                     ${this._esc(project.name)}
-                    ${project.isCompleted ? '<span class="completed-badge">✓</span>' : ''}
+                    ${project.isCompleted ? '<span class="completed-badge" role="img" aria-label="Completed">✓</span>' : ''}
                     ${this._shareBadge('project', project.id, project)}
                 </div>
                 <div class="row-subtitle">

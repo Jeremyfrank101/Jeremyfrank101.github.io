@@ -200,6 +200,9 @@ const CozyHealth = {
         (people || []).forEach(p => { this.people[p.user_id] = p; });
     },
 
+    // Sharing is the one write that cannot be queued: the email has to be
+    // resolved to a user id by the server before there is anything to store.
+    // So this one stays direct, and reports failure immediately.
     async shareHealth(email) {
         const { data: found, error: e1 } = await Auth.client
             .rpc('find_user_by_email', { p_email: email });
@@ -221,9 +224,9 @@ const CozyHealth = {
     },
 
     async unshareHealth(shareId) {
-        const { error } = await Auth.client.from('shares').delete().eq('id', shareId);
-        if (error) throw new Error(error.message);
-        await this.refresh();
+        this.shares = this.shares.filter(s => s.id !== shareId);
+        Sync.enqueueWrite({ table: 'shares', action: 'delete', match: { id: shareId } });
+        this.render();
     },
 
     async viewPerson(id) {
@@ -234,16 +237,20 @@ const CozyHealth = {
         await this.refresh();
     },
 
+    // First run on a new account. Queued like everything else, so signing in
+    // for the first time on a bad connection still leaves a usable app.
     async _ensureProfile() {
         const user = Auth.getUser();
-        const { data, error } = await this.db('user_profiles').insert({
+        const row = {
+            id: Sync.newId(),
             owner_id: user.id,
             device_id: 'web:' + user.id,
             user_id: user.id,
-            username: user.username || 'You'
-        }).select().single();
-        if (error) { console.warn('[CozyHealth] could not create profile', error); return; }
-        this.data.profile = data;
+            username: user.username || 'You',
+            cozy_crumpets: 0
+        };
+        this.data.profile = row;
+        this._queueWrite('user_profiles', 'insert', row);
     },
 
     // ---------- helpers ----------
@@ -315,15 +322,14 @@ const CozyHealth = {
 
     // Crumpets are the app's reward currency: small, frequent, and never
     // spent by the app itself.
-    async awardCrumpets(n, why) {
+    awardCrumpets(n, why) {
         if (!this.data.profile) return;
         const next = this.crumpets() + n;
         this.data.profile.cozy_crumpets = next;
-        const { error } = await this.db('user_profiles')
-            .update({ cozy_crumpets: next, updated_at: new Date().toISOString() })
-            .eq('id', this.data.profile.id);
-        if (error) console.warn('[CozyHealth] crumpet update failed', error);
-        else this._toast(`+${n} 🥞 ${why}`);
+        this._queueWrite('user_profiles', 'update',
+            { cozy_crumpets: next, updated_at: new Date().toISOString() },
+            { id: this.data.profile.id });
+        this._toast(`+${n} 🥞 ${why}`);
     },
 
     fmt(n, digits = 0) {
@@ -760,7 +766,7 @@ const CozyHealth = {
                 <span class="chx-dim">${this.esc(m.meal_type)} · ${this.when(m.date)}${this._amountOf(m)}</span>
             </div>
             <span class="chx-item-num">${this.fmt(m.calories)} kcal</span>
-            ${deletable ? `<button class="chx-del" data-del-meal="${m.id}" title="Delete">✕</button>` : ''}
+            ${deletable ? `<button class="chx-del" data-del-meal="${m.id}" title="Delete" aria-label="Delete ${this.esc(m.name)}">✕</button>` : ''}
         </div>`;
     },
 
@@ -1013,6 +1019,22 @@ const CozyHealth = {
         on('chx-add-measure', 'click', () => this.addMeasurement());
         on('chx-med-toggle', 'click', () => this.toggleMeditation());
 
+        // Enter submits the form the field belongs to. Logging a meal used to
+        // mean filling four boxes and then reaching for the mouse.
+        const submitOn = (ids, fn) => ids.forEach(id => on(id, 'keydown', e => {
+            if (e.key === 'Enter') { e.preventDefault(); fn(); }
+        }));
+        submitOn(['chx-meal-name', 'chx-meal-cal', 'chx-meal-p', 'chx-meal-c', 'chx-meal-f'],
+                 () => this.addMeal());
+        submitOn(['chx-w-min', 'chx-w-feel', 'chx-w-notes'], () => this.addWorkout());
+        submitOn(['chx-grat'], () => this.saveMind());
+        submitOn(['chx-m-weight', 'chx-m-fat', 'chx-m-muscle', 'chx-m-notes'],
+                 () => this.addMeasurement());
+        submitOn(['chx-amt'], () => { /* amount only arms the next tap */ });
+
+        on('chx-share-email', 'keydown', e => {
+            if (e.key === 'Enter') { e.preventDefault(); document.getElementById('chx-share-btn')?.click(); }
+        });
         on('chx-share-btn', 'click', async () => {
             const input = document.getElementById('chx-share-email');
             const err = document.getElementById('chx-share-err');
@@ -1134,22 +1156,16 @@ const CozyHealth = {
             journal: document.getElementById('chx-journal').value.trim()
         };
         const existing = this.todayMind();
-        try {
-            if (existing) {
-                const { error } = await this.db('mind_entries').update(payload).eq('id', existing.id);
-                if (error) throw error;
-                Object.assign(existing, payload);
-                this._toast('Check-in updated');
-            } else {
-                const { data, error } = await this.db('mind_entries')
-                    .insert({ ...this._base(), date: new Date().toISOString(), ...payload })
-                    .select().single();
-                if (error) throw error;
-                this.data.mind.unshift(data);
-                await this.awardCrumpets(3, 'for checking in');
-            }
+        if (existing) {
+            Object.assign(existing, payload);
+            this._queueWrite('mind_entries', 'update', payload, { id: existing.id });
+            this._toast('Check-in updated');
             this.render();
-        } catch (e) { this._toast('Could not save: ' + e.message); }
+        } else {
+            await this._insert('mind_entries',
+                { ...this._base(), date: new Date().toISOString(), ...payload },
+                'mind', 'Check-in saved', 3);
+        }
     },
 
     async addMeasurement() {
@@ -1167,28 +1183,37 @@ const CozyHealth = {
         await this._insert('profile_measurements', row, 'measurements', 'Measurement saved', 2);
     },
 
+    // ---------- writes ----------
+    //
+    // Every write is applied locally first and queued for the server, the way
+    // CozyHome has always worked. Logging a meal on a train used to lose it:
+    // the insert went straight to the network, failed, and left a toast. Now
+    // the row appears immediately and the queue delivers it whenever the
+    // connection comes back, surviving a reload in the meantime.
+    //
+    // The id is generated here rather than by Postgres so the optimistic row
+    // and the stored row are the same row, and a retry whose first attempt
+    // actually landed collides on the primary key instead of duplicating.
+
+    _queueWrite(table, action, payload, match) {
+        Sync.enqueueWrite({ schema: this.SCHEMA, table, action, payload, match });
+    },
+
     async _insert(table, row, key, msg, crumpets) {
-        try {
-            const { data, error } = await this.db(table).insert(row).select().single();
-            if (error) throw error;
-            this.data[key].unshift(data);
-            this._toast(msg);
-            if (crumpets) await this.awardCrumpets(crumpets, 'logged');
-            this.render();
-        } catch (e) {
-            console.error('[CozyHealth] insert failed', table, e);
-            this._toast('Could not save: ' + e.message);
-        }
+        const full = { id: row.id || Sync.newId(), created_at: new Date().toISOString(), ...row };
+        this.data[key].unshift(full);
+        if (msg) this._toast(msg);
+        this._queueWrite(table, 'insert', full);
+        if (crumpets) this.awardCrumpets(crumpets, 'logged');
+        this.render();
+        return full;
     },
 
     async remove(table, id, key) {
         if (!confirm('Delete this entry?')) return;
-        try {
-            const { error } = await this.db(table).delete().eq('id', id);
-            if (error) throw error;
-            this.data[key] = this.data[key].filter(r => r.id !== id);
-            this.render();
-        } catch (e) { this._toast('Could not delete: ' + e.message); }
+        this.data[key] = this.data[key].filter(r => r.id !== id);
+        this._queueWrite(table, 'delete', null, { id });
+        this.render();
     },
 
     // ---------- meditation timer ----------
@@ -1220,19 +1245,12 @@ const CozyHealth = {
 
     async _saveMeditation(secs) {
         const preset = Number(document.getElementById('chx-med-preset')?.value) || 5;
-        try {
-            const { data, error } = await this.db('meditation_sessions').insert({
-                id: crypto.randomUUID(),
-                ...this._base(),
-                date: new Date().toISOString(),
-                duration_seconds: secs,
-                preset_minutes: preset,
-                color_hex: '#7fb6a8'
-            }).select().single();
-            if (error) throw error;
-            this.data.meditations.unshift(data);
-            await this.awardCrumpets(Math.max(1, Math.round(secs / 60)), 'for sitting still');
-            this.render();
-        } catch (e) { this._toast('Could not save session: ' + e.message); }
+        await this._insert('meditation_sessions', {
+            ...this._base(),
+            date: new Date().toISOString(),
+            duration_seconds: secs,
+            preset_minutes: preset,
+            color_hex: '#7fb6a8'
+        }, 'meditations', 'Session saved', Math.max(1, Math.round(secs / 60)));
     }
 };

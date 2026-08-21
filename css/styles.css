@@ -287,26 +287,32 @@ body {
     white-space: nowrap;
 }
 
-/* Sync indicator in the header. Silent when everything is saved. */
+/* Unsaved-writes indicator. Pinned to the viewport rather than to one app's
+   header, because every app queues its writes now. Silent when all is saved. */
 .sync-status {
-    position: absolute;
+    position: fixed;
     left: 50%;
     transform: translateX(-50%);
-    top: calc(100% - 2px);
+    /* clear of the per-app toasts, which are also bottom-centred */
+    bottom: 68px;
+    z-index: 90;
+    border: none;
+    font: inherit;
     white-space: nowrap;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
     letter-spacing: 0.01em;
-    padding: 3px 10px;
+    padding: 7px 15px;
     border-radius: 50px;
-    background: rgba(0, 0, 0, 0.22);
+    background: rgba(24, 16, 30, 0.9);
     color: rgba(255, 255, 255, 0.95);
     pointer-events: none;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+    box-shadow: 0 3px 14px rgba(0, 0, 0, 0.3);
 }
 
 .sync-status.offline,
-.sync-status.error {
+.sync-status.error,
+.sync-status.refused {
     background: var(--danger);
     color: #fff;
     cursor: pointer;

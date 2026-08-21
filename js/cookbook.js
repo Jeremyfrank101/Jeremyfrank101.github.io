@@ -44,6 +44,15 @@ const CozyCookBook = {
     db(table) { return Auth.client.schema(this.SCHEMA).from(table); },
     uid() { return Auth.getUser()?.id || null; },
 
+    // Every change is applied locally and queued for the server, so ticking
+    // off an ingredient in a kitchen with no signal is not silently thrown
+    // away. Ids are generated here rather than by Postgres: the optimistic row
+    // and the stored row are then the same row, and a retry whose first
+    // attempt actually landed collides on the key instead of duplicating.
+    _write(table, action, payload, match) {
+        Sync.enqueueWrite({ schema: this.SCHEMA, table, action, payload, match });
+    },
+
     _buildDOM() {
         this.container.innerHTML = `
         <div class="ckb-root">
@@ -163,14 +172,14 @@ const CozyCookBook = {
             const rs = this.recipesIn(f.id);
             const shares = this.sharesOf(f.id);
             return `<button class="ckb-folder" data-folder="${f.id}">
-                <span class="ckb-folder-spine"></span>
+                <span class="ckb-folder-spine" aria-hidden="true"></span>
                 <span class="ckb-folder-main">
                     <strong>${this.esc(f.name)}</strong>
                     <small>${rs.length} recipe${rs.length === 1 ? '' : 's'}${
                         owned && shares.length ? ` · shared with ${shares.length}` : ''}${
                         owned ? '' : ` · from ${this.esc(this.who(f.user_id))}`}</small>
                 </span>
-                <span class="ckb-go">›</span>
+                <span class="ckb-go" aria-hidden="true">›</span>
             </button>`;
         };
 
@@ -223,7 +232,7 @@ const CozyCookBook = {
                             (r.ingredients || []).length} ingredients · ${(r.steps || []).length} steps${
                             r.made_count ? ` · made ${r.made_count}×` : ''}</small>
                     </span>
-                    <span class="ckb-go">›</span>
+                    <span class="ckb-go" aria-hidden="true">›</span>
                 </button>`).join('')}</div>`
                 : '<p class="ckb-dim">Nothing in here yet.</p>'}
         </div>
@@ -247,7 +256,7 @@ const CozyCookBook = {
             ${shares.length ? `<div class="ckb-shares">${shares.map(s => `
                 <div class="ckb-share">
                     <span>${this.esc(this.who(s.shared_with))} <em>${this.esc(s.status)}</em></span>
-                    <button class="ckb-del" data-unshare="${s.id}" title="Stop sharing">✕</button>
+                    <button class="ckb-del" data-unshare="${s.id}" title="Stop sharing" aria-label="Stop sharing with ${this.esc(this.who(s.shared_with))}">✕</button>
                 </div>`).join('')}</div>` : '<p class="ckb-dim">Not shared with anyone yet.</p>'}
             <div class="ckb-row">
                 <input type="email" id="ckb-share-email" placeholder="their email" autocomplete="off">
@@ -271,7 +280,7 @@ const CozyCookBook = {
                     <input type="checkbox" data-check="${kind}" data-i="${i}" ${x.isChecked ? 'checked' : ''}>
                     <span>${this.esc(kind === 'ing' ? x.name : x.text)}</span>
                 </label>
-                ${owned ? `<button class="ckb-del" data-drop="${kind}" data-i="${i}" title="Remove">✕</button>` : ''}
+                ${owned ? `<button class="ckb-del" data-drop="${kind}" data-i="${i}" title="Remove" aria-label="Remove ${this.esc(kind === 'ing' ? x.name : x.text)}">✕</button>` : ''}
             </li>`;
 
         return `
@@ -356,21 +365,25 @@ const CozyCookBook = {
         const el = document.getElementById('ckb-new-folder');
         const name = (el.value || '').trim();
         if (!name) { this._toast('Give the cookbook a name.'); return; }
-        const { error } = await this.db('folders').insert({ name, user_id: this.uid() });
-        if (error) { this._toast(error.message); return; }
+        const row = { id: Sync.newId(), name, user_id: this.uid(), created_at: new Date().toISOString() };
+        this.data.folders.push(row);
+        this.data.folders.sort((a, b) => a.name.localeCompare(b.name));
+        this._write('folders', 'insert', row);
         el.value = '';
         this._toast(`${name} created`);
-        await this.refresh();
+        this.render();
     },
 
     async delFolder(id) {
         const rs = this.recipesIn(id);
         if (rs.length) { this._toast(`Empty it first — ${rs.length} recipe(s) inside.`); return; }
-        const { error } = await this.db('folders').delete().eq('id', id).select();
-        if (error) { this._toast(error.message); return; }
+        const f = this.folder(id);
+        if (!confirm(`Delete the cookbook "${f ? f.name : ''}"? This cannot be undone.`)) return;
+        this.data.folders = this.data.folders.filter(x => x.id !== id);
+        this.data.shares = this.data.shares.filter(s => s.folder_id !== id);
+        this._write('folders', 'delete', null, { id });
         this._toast('Cookbook deleted');
-        this.view = { name: 'shelf' };
-        await this.refresh();
+        this.go({ name: 'shelf' });
     },
 
     async addRecipe() {
@@ -378,31 +391,30 @@ const CozyCookBook = {
         const meal = document.getElementById('ckb-new-meal').value || null;
         const title = (t.value || '').trim();
         if (!title) { this._toast('Give the recipe a name.'); return; }
-        const { data, error } = await this.db('recipes').insert({
-            title, meal, folder_id: this.view.id, user_id: this.uid(),
-            ingredients: [], steps: [], made_count: 0
-        }).select().single();
-        if (error) { this._toast(error.message); return; }
+        const row = {
+            id: Sync.newId(), title, meal, folder_id: this.view.id, user_id: this.uid(),
+            ingredients: [], steps: [], made_count: 0, created_at: new Date().toISOString()
+        };
+        this.data.recipes.unshift(row);
+        this._write('recipes', 'insert', row);
         t.value = '';
-        await this.refresh();
-        this.go({ name: 'recipe', id: data.id });
+        this.go({ name: 'recipe', id: row.id });
     },
 
     async delRecipe(id) {
         const r = this.recipe(id);
-        const { error } = await this.db('recipes').delete().eq('id', id).select();
-        if (error) { this._toast(error.message); return; }
+        if (!confirm(`Delete "${r ? r.title : 'this recipe'}"? This cannot be undone.`)) return;
+        this.data.recipes = this.data.recipes.filter(x => x.id !== id);
+        this._write('recipes', 'delete', null, { id });
         this._toast('Recipe deleted');
-        this.view = r && r.folder_id ? { name: 'folder', id: r.folder_id } : { name: 'shelf' };
-        await this.refresh();
+        this.go(r && r.folder_id ? { name: 'folder', id: r.folder_id } : { name: 'shelf' });
     },
 
     // Ingredients and steps live in one jsonb column each, so every edit is a
     // read-modify-write of the whole array.
-    async _saveLines(r, patch) {
-        const { error } = await this.db('recipes').update(patch).eq('id', r.id).select();
-        if (error) { this._toast(error.message); await this.refresh(); return false; }
+    _saveLines(r, patch) {
         Object.assign(r, patch);
+        this._write('recipes', 'update', patch, { id: r.id });
         return true;
     },
 
@@ -416,7 +428,7 @@ const CozyCookBook = {
         const line = kind === 'ing'
             ? { id: this._lineId(), name: text, isChecked: false }
             : { id: this._lineId(), text, isChecked: false };
-        if (await this._saveLines(r, { [key]: [...(r[key] || []), line] })) this.render();
+        if (this._saveLines(r, { [key]: [...(r[key] || []), line] })) this.render();
     },
 
     async dropLine(kind, i) {
@@ -424,7 +436,7 @@ const CozyCookBook = {
         if (!r || !this.isMine(r)) return;
         const key = kind === 'ing' ? 'ingredients' : 'steps';
         const next = (r[key] || []).filter((_, n) => n !== i);
-        if (await this._saveLines(r, { [key]: next })) this.render();
+        if (this._saveLines(r, { [key]: next })) this.render();
     },
 
     // Ticking off while cooking. On someone else's recipe the write would be
@@ -435,7 +447,7 @@ const CozyCookBook = {
         const key = kind === 'ing' ? 'ingredients' : 'steps';
         const next = (r[key] || []).map((x, n) => n === i ? { ...x, isChecked: checked } : x);
         r[key] = next;
-        if (this.isMine(r)) await this._saveLines(r, { [key]: next });
+        if (this.isMine(r)) this._saveLines(r, { [key]: next });
         this.render();
     },
 
@@ -443,7 +455,7 @@ const CozyCookBook = {
         const r = this.recipe(this.view.id);
         if (!r || !this.isMine(r)) return;
         const clear = a => (a || []).map(x => ({ ...x, isChecked: false }));
-        if (await this._saveLines(r, { ingredients: clear(r.ingredients), steps: clear(r.steps) })) this.render();
+        if (this._saveLines(r, { ingredients: clear(r.ingredients), steps: clear(r.steps) })) this.render();
     },
 
     async madeIt(id) {
@@ -451,7 +463,7 @@ const CozyCookBook = {
         if (!r) return;
         if (!this.isMine(r)) { this._toast('You can only count makes on your own recipes.'); return; }
         const n = (r.made_count || 0) + 1;
-        if (await this._saveLines(r, { made_count: n })) {
+        if (this._saveLines(r, { made_count: n })) {
             this._toast(`${r.title} — made ${n}×`);
             this.render();
         }
@@ -471,6 +483,8 @@ const CozyCookBook = {
         if (!person) { show(`No account uses ${email}.`); return; }
         if (person.user_id === this.uid()) { show('That is you.'); return; }
 
+        // Like CozyHealth's share, this one cannot be queued: the email has to
+        // be resolved to a user id by the server before there is a row to store.
         const { error } = await this.db('cookbook_shares').insert({
             folder_id: this.view.id,
             owner_id: this.uid(),
@@ -484,20 +498,27 @@ const CozyCookBook = {
     },
 
     async unshare(shareId) {
-        const { error } = await this.db('cookbook_shares').delete().eq('id', shareId).select();
-        if (error) { this._toast(error.message); return; }
-        await this.refresh();
+        const s = this.data.shares.find(x => x.id === shareId);
+        if (!confirm(`Stop sharing with ${s ? this.who(s.shared_with) : 'them'}?`)) return;
+        this.data.shares = this.data.shares.filter(x => x.id !== shareId);
+        this._write('cookbook_shares', 'delete', null, { id: shareId });
+        this.render();
     },
 
     // Accepting sets the share to 'accepted', which is what the folder and
     // recipe read policies look for. Declining just removes the row.
     async answer(shareId, status) {
-        const q = status
-            ? this.db('cookbook_shares').update({ status }).eq('id', shareId)
-            : this.db('cookbook_shares').delete().eq('id', shareId);
-        const { error } = await q.select();
-        if (error) { this._toast(error.message); return; }
+        if (status) {
+            const s = this.data.shares.find(x => x.id === shareId);
+            if (s) s.status = status;
+            this._write('cookbook_shares', 'update', { status }, { id: shareId });
+        } else {
+            this.data.shares = this.data.shares.filter(x => x.id !== shareId);
+            this._write('cookbook_shares', 'delete', null, { id: shareId });
+        }
         this._toast(status ? 'Cookbook added to your shelf' : 'Invitation declined');
-        await this.refresh();
+        // Accepting reveals rows the read policies were hiding, so this one
+        // does need a round trip — but only to read, never to save.
+        if (status) await this.refresh(); else this.render();
     }
 };

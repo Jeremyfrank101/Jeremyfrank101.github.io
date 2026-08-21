@@ -80,11 +80,15 @@ const App = {
         const el = document.getElementById('sync-status');
         if (!el) return;
         const pending = Sync.pendingCount();
+        const dropped = Sync.dropped.length;
         const map = {
             idle:    { text: '', cls: '' },
             syncing: { text: 'Saving…', cls: 'syncing' },
             offline: { text: `Offline · ${pending} change${pending === 1 ? '' : 's'} pending`, cls: 'offline' },
-            error:   { text: `Not saved · ${pending} pending · retry`, cls: 'error' }
+            error:   { text: `Not saved · ${pending} pending · retry`, cls: 'error' },
+            // The server refused these outright, so retrying is pointless —
+            // say what happened instead of spinning forever.
+            refused: { text: `${dropped} change${dropped === 1 ? '' : 's'} rejected · details`, cls: 'refused' }
         };
         const s = map[status] || map.idle;
         el.textContent = s.text;
@@ -245,8 +249,17 @@ const App = {
         await this.checkAuth();
     },
 
-    // Called from the sync-status chip when writes are stuck.
+    // Called from the sync-status chip when writes are stuck. If the server
+    // refused them there is nothing to retry, so show what was lost instead.
     retrySync() {
+        if (Sync.dropped.length) {
+            const lines = Sync.dropped.map(d =>
+                `• ${d.op.table || d.op.kind || 'change'}: ${d.message}`).join('\n');
+            alert(`These changes were rejected and could not be saved:\n\n${lines}`);
+            Sync.dropped = [];
+            this.renderSyncStatus(Sync.status === 'refused' ? 'idle' : Sync.status);
+            return;
+        }
         Sync.flush();
     },
 

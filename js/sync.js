@@ -232,6 +232,41 @@ const Sync = {
         this.flush();
     },
 
+    // The same durability for any table in any schema, so apps other than
+    // CozyHome do not have to write straight to the network and lose the
+    // change when the connection is not there.
+    //
+    // Callers supply the row's id themselves. Every table involved has a uuid
+    // primary key, so a client-generated id means the optimistic row and the
+    // stored row are the same row, and a retry that turns out to have already
+    // landed collides on the key instead of inserting a duplicate.
+    enqueueWrite({ schema, table, action, payload, match }) {
+        this.enqueue({ type: 'write', schema, table, action, payload, match });
+    },
+
+    newId() {
+        return (crypto.randomUUID && crypto.randomUUID()) ||
+               'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+                   const r = Math.random() * 16 | 0;
+                   return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+               });
+    },
+
+    // A structured error from PostgREST means the request reached the server
+    // and was rejected on its merits — a constraint, a policy, a bad column.
+    // Retrying it unchanged will be rejected identically, and leaving it at
+    // the head of the queue blocks every write behind it forever, which is
+    // how a single bad row can silently stop an account from saving anything.
+    _isTerminal(err) {
+        if (!err) return false;
+        if (err.code === 'PGRST301' || err.code === '401') return false;   // token expired; worth a retry
+        return !!err.code || (err.status >= 400 && err.status < 500);
+    },
+
+    // Ops the server refused outright. Kept so the UI can say so rather than
+    // pretending everything saved.
+    dropped: [],
+
     async flush() {
         if (this._flushing || !this._queue.length) return;
         if (!Auth.getUser()) return;
@@ -245,6 +280,15 @@ const Sync = {
                 this._queue.shift();
                 this._saveQueue();
             } catch (err) {
+                if (this._isTerminal(err)) {
+                    // Refused, not unreachable. Drop it so the rest of the
+                    // queue can drain, and remember it so we can say so.
+                    console.error('[Sync] write refused, dropping', op, err);
+                    this.dropped.push({ op, message: err.message || String(err) });
+                    this._queue.shift();
+                    this._saveQueue();
+                    continue;
+                }
                 console.error('[Sync] write failed, will retry', op, err);
                 this._flushing = false;
                 this._setStatus(navigator.onLine ? 'error' : 'offline', err.message);
@@ -253,10 +297,30 @@ const Sync = {
         }
 
         this._flushing = false;
-        this._setStatus('idle');
+        this._setStatus(this.dropped.length ? 'refused' : 'idle');
     },
 
     async _apply(op) {
+        // A plain write to any table in any schema. Used by every app but
+        // CozyHome, which has its own typed ops below.
+        if (op.type === 'write') {
+            const from = op.schema ? this.client.schema(op.schema).from(op.table)
+                                   : this.client.from(op.table);
+            let res;
+            if (op.action === 'insert')      res = await from.insert(op.payload);
+            else if (op.action === 'update') res = await from.update(op.payload).match(op.match);
+            else if (op.action === 'delete') res = await from.delete().match(op.match);
+            else throw new Error('unknown write action ' + op.action);
+
+            if (res.error) {
+                // A retried insert whose first attempt actually landed comes
+                // back as a duplicate key. That is success, not failure.
+                if (op.action === 'insert' && res.error.code === '23505') return;
+                throw res.error;
+            }
+            return;
+        }
+
         // The theme lives in its own single-row table, so it has no `kind`.
         if (op.type === 'theme') {
             const res = await this.client.from('preferences').upsert({
