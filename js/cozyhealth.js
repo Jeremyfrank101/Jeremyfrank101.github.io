@@ -428,6 +428,88 @@ const CozyHealth = {
         </div>`;
     },
 
+    // ---------- what to suggest ----------
+    //
+    // A flat alphabetical library is useless once it passes ~200 entries. What
+    // someone wants to log at 8am is what they logged at 8am on other days, so
+    // suggestions come from their own history at this hour, ranked by how
+    // often they eat it, and topped up with library items for this meal slot.
+
+    SUGGEST_WINDOW_H: 2.5,     // how far either side of now still counts
+    SUGGEST_DAYS: 21,
+
+    timeSlot(d = new Date()) {
+        const h = d.getHours();
+        if (h < 10.5) return 'Breakfast';
+        if (h < 15)   return 'Lunch';
+        if (h < 21)   return 'Dinner';
+        return 'Snack';
+    },
+
+    // Hours between two times of day, wrapping midnight so 23:00 and 01:00
+    // are two hours apart rather than twenty-two.
+    _hourGap(a, b) {
+        const d = Math.abs(a - b) % 24;
+        return Math.min(d, 24 - d);
+    },
+
+    suggestions() {
+        const now = new Date();
+        const nowH = now.getHours() + now.getMinutes() / 60;
+        const cutoff = Date.now() - this.SUGGEST_DAYS * 864e5;
+
+        // 1. the user's own entries logged around this time of day
+        const seen = new Map();
+        for (const m of this.data.meals) {
+            const d = new Date(m.date);
+            if (d.getTime() < cutoff) continue;
+            if (this._hourGap(d.getHours() + d.getMinutes() / 60, nowH) > this.SUGGEST_WINDOW_H) continue;
+            const key = (m.name || '').trim().toLowerCase();
+            if (!key) continue;
+            const prev = seen.get(key);
+            if (prev) { prev.count++; if (d > prev.when) prev.when = d; }
+            else seen.set(key, { entry: m, count: 1, when: d });
+        }
+
+        const mine = [...seen.values()]
+            .sort((a, b) => b.count - a.count || b.when - a.when)
+            .slice(0, 8)
+            .map(x => ({ kind: 'again', id: x.entry.id, name: x.entry.name,
+                         calories: x.entry.calories, count: x.count, src: x.entry }));
+
+        // 2. top up from the library with things that fit this meal slot
+        const slot = this.timeSlot(now);
+        const taken = new Set(mine.map(m => m.name.trim().toLowerCase()));
+        const filler = this.data.library
+            .filter(g => g.meal_type === slot && !taken.has((g.name || '').trim().toLowerCase()))
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .slice(0, Math.max(0, 8 - mine.length))
+            .map(g => ({ kind: 'library', id: g.id, name: g.name, calories: g.calories, src: g }));
+
+        return { slot, mine, filler };
+    },
+
+    searchLibrary(q) {
+        const t = (q || '').trim().toLowerCase();
+        if (t.length < 2) return [];
+        return this.data.library
+            .filter(g => (g.name || '').toLowerCase().includes(t))
+            .sort((a, b) => {
+                const ai = a.name.toLowerCase().indexOf(t), bi = b.name.toLowerCase().indexOf(t);
+                return ai - bi || a.name.localeCompare(b.name);
+            })
+            .slice(0, 14);
+    },
+
+    // Re-log a past entry: copy its nutrition forward under today's date.
+    async logAgain(mealId) {
+        const src = this.data.meals.find(m => m.id === mealId);
+        if (!src) return;
+        const row = { ...src, ...this._base(), date: new Date().toISOString() };
+        delete row.id; delete row.created_at;
+        await this._insert('meal_entries', row, 'meals', `${src.name} logged again`, 2);
+    },
+
     // ---------- Food ----------
 
     renderFood() {
@@ -435,12 +517,25 @@ const CozyHealth = {
         const t = this.totals(meals);
 
         if (!this.isOwnLog()) return this._readOnlyFood();
+        const sug = this.suggestions();
+        const hour = new Date().toLocaleTimeString(undefined, { hour: 'numeric' });
         return `
         <div class="chx-card">
-            <h3>Quick add</h3>
+            <h3>Usually around ${this.esc(hour)}</h3>
+            ${sug.mine.length ? `<div class="chx-chips">
+                ${sug.mine.map(m => `<button class="chx-chip chx-again" data-again="${m.id}">
+                    ${this.esc(m.name)}<small>${this.fmt(m.calories)} kcal · ${m.count}\u00d7</small></button>`).join('')}
+            </div>` : `<p class="chx-dim">Nothing logged around this time yet — once you do, it will show up here.</p>`}
+
+            ${sug.filler.length ? `<div class="chx-suggest-sep">${this.esc(sug.slot)} ideas</div>
             <div class="chx-chips">
-                ${this.data.library.map(g => `<button class="chx-chip" data-quick="${g.id}">${this.esc(g.name)}<small>${this.fmt(g.calories)} kcal</small></button>`).join('')
-                  || '<p class="chx-dim">No meal library yet.</p>'}
+                ${sug.filler.map(g => `<button class="chx-chip" data-quick="${g.id}">
+                    ${this.esc(g.name)}<small>${this.fmt(g.calories)} kcal</small></button>`).join('')}
+            </div>` : ''}
+
+            <div class="chx-search">
+                <input type="text" id="chx-food-search" placeholder="Search all ${this.data.library.length} foods…" autocomplete="off">
+                <div class="chx-results" id="chx-food-results"></div>
             </div>
         </div>
 
@@ -719,6 +814,26 @@ const CozyHealth = {
 
         this.container.querySelectorAll('[data-quick]').forEach(b =>
             b.addEventListener('click', () => this.quickAdd(b.dataset.quick)));
+        this.container.querySelectorAll('[data-again]').forEach(b =>
+            b.addEventListener('click', () => this.logAgain(b.dataset.again)));
+
+        const search = $('chx-food-search');
+        if (search) {
+            const results = $('chx-food-results');
+            const run = () => {
+                const hits = this.searchLibrary(search.value);
+                if (!search.value.trim()) { results.innerHTML = ''; return; }
+                results.innerHTML = hits.length
+                    ? hits.map(g => `<button class="chx-result" data-quick="${g.id}">
+                        <span>${this.esc(g.name)}</span>
+                        <small>${this.fmt(g.calories)} kcal · ${this.fmt(g.protein_grams)}g protein</small>
+                      </button>`).join('')
+                    : '<p class="chx-dim">Nothing matches. Log it manually below.</p>';
+                results.querySelectorAll('[data-quick]').forEach(b =>
+                    b.addEventListener('click', () => this.quickAdd(b.dataset.quick)));
+            };
+            search.addEventListener('input', run);
+        }
 
         on('chx-add-meal', 'click', () => this.addMeal());
         on('chx-add-workout', 'click', () => this.addWorkout());
