@@ -192,6 +192,10 @@ const Iliad = {
         this.mounted = true;
         this.scene = 'select';
         this._t = 0;
+        // Painted art, if any has been added. Resolves before the first fight
+        // because the roster and prelude screens come first; until then, and
+        // for ever if there is no manifest, the procedural renderer draws.
+        if (typeof Sprites !== 'undefined') Sprites.load();
         this._buildDOM();
         this._last = performance.now();
         this._loop = this._loop.bind(this);
@@ -1165,6 +1169,16 @@ const Iliad = {
             this._bounce = mk();
             this._outline = mk();
         }
+        // If painted art has been supplied for this character, it stands in
+        // here and the whole procedural body below is skipped. Missing art is
+        // the normal case: Sprites.frame returns null and nothing changes.
+        const frame = (typeof Sprites !== 'undefined' && !opts.procedural)
+            ? Sprites.frame(id, poseName) : null;
+        if (frame) {
+            return this._drawSpriteWarrior(ctx, frame, P, poseName, facing,
+                                           cx, groundY, t, opts, ox, oy, BW, BH);
+        }
+
         const b = this._bufCtx;
         b.clearRect(0, 0, BW, BH);
         b.imageSmoothingEnabled = true;
@@ -1336,6 +1350,72 @@ const Iliad = {
         this._crest(b, pal, helmY, t, P.crestX, this._build(id).crest);
         b.restore();
 
+        this._compositeWarrior(ctx, { facing, cx, groundY, t, opts, ox, oy, BW, BH,
+                                      lighting: 'engine' });
+    },
+
+    // Everything from a filled buffer to pixels on the stage: the derived
+    // lighting passes, the contact shadow, the reflection, the downsample and
+    // the haze. Shared by the procedural renderer and the sprite renderer, so
+    // painted art gets the same grounding and atmosphere for free.
+    //
+    // `lighting: 'engine'` derives rim, bounce and outline from the silhouette.
+    // Painted art usually arrives with its highlights already in it and passes
+    // 'baked', which skips them — running them over lit art doubles every
+    // highlight and is the usual way a sprite swap looks worse than what it
+    // replaced.
+    _compositeWarrior(ctx, a) {
+        const { facing, cx, groundY, t, opts, ox, oy, BW, BH } = a;
+        const SS = this.SS;
+        const lit = a.lighting === 'engine';
+
+        if (lit) this._derivedLighting(BW, BH, opts);
+        else [this._rim, this._bounce, this._outline].forEach(c =>
+            c.getContext('2d').clearRect(0, 0, BW, BH));
+
+        // ---- composite ----
+        const sc = opts.scale || 1;
+        ctx.save();
+        ctx.translate(cx, groundY);
+        ctx.scale(facing * sc, sc);
+
+        // contact shadow: tight and dark under the feet, soft further out.
+        // `plain` omits it — the sprite template exporter wants the figure
+        // alone on transparency, with nothing baked in that the engine adds.
+        if (!opts.plain) {
+            ctx.fillStyle = 'rgba(24,14,28,0.34)';
+            ctx.beginPath(); ctx.ellipse(0, 2, 30, 7, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = 'rgba(24,14,28,0.30)';
+            ctx.beginPath(); ctx.ellipse(0, 1, 17, 4.5, 0, 0, Math.PI * 2); ctx.fill();
+        }
+
+        if (opts.reflect) this._reflect(ctx, ox, oy, BW, BH, t);
+
+        const sm = ctx.imageSmoothingEnabled;
+        ctx.imageSmoothingEnabled = true;      // downsampling 3x is the point
+        const dw = BW / SS, dh = BH / SS;
+        ctx.drawImage(this._outline, 0, 0, BW, BH, -ox, -oy, dw, dh);
+        ctx.drawImage(this._buf,     0, 0, BW, BH, -ox, -oy, dw, dh);
+        ctx.drawImage(this._bounce,  0, 0, BW, BH, -ox, -oy, dw, dh);
+        ctx.drawImage(this._rim,     0, 0, BW, BH, -ox, -oy, dw, dh);
+        ctx.imageSmoothingEnabled = sm;
+
+        // atmospheric haze for anything standing far back
+        if (opts.haze) {
+            ctx.globalCompositeOperation = 'source-atop';
+            ctx.fillStyle = opts.haze;
+            ctx.fillRect(-ox, -oy, BW / SS, BH / SS);
+            ctx.globalCompositeOperation = 'source-over';
+        }
+        ctx.restore();
+    },
+
+    // Rim, bounce and outline, all three derived from the silhouette currently
+    // in _buf rather than guessed per body part — which is why they keep
+    // working whatever the pose does.
+    _derivedLighting(BW, BH, opts) {
+        const SS = this.SS;
+
         // ---- rim light ----
         // Subtracting a copy of the silhouette shifted away from the light
         // leaves exactly the lit edge, whatever shape the pose happens to be.
@@ -1375,38 +1455,31 @@ const Iliad = {
         oc.fillStyle = 'rgba(26,16,30,0.78)';
         oc.fillRect(0, 0, BW, BH);
         oc.globalCompositeOperation = 'source-over';
+    },
 
-        // ---- composite ----
-        const sc = opts.scale || 1;
-        ctx.save();
-        ctx.translate(cx, groundY);
-        ctx.scale(facing * sc, sc);
+    // Painted art standing in for the procedural figure. The frame goes into
+    // the same buffer the procedural path fills, so the reflection, haze,
+    // contact shadow and downsample all behave identically — the only thing
+    // that changes is who painted the pixels.
+    //
+    // The pose table still drives the breathing, so a sprite-backed fighter is
+    // not a dead sticker between turns.
+    _drawSpriteWarrior(ctx, f, P, poseName, facing, cx, groundY, t, opts, ox, oy, BW, BH) {
+        const SS = this.SS;
+        const b = this._bufCtx;
+        b.clearRect(0, 0, BW, BH);
+        b.save();
+        b.scale(SS, SS);
+        b.translate(ox, oy);
+        b.imageSmoothingEnabled = true;
+        const breathe = poseName === 'fallen' ? 0 : Math.sin(t * 2.4) * P.bob * 0.8;
+        // The anchor is the point in the art that belongs on the ground line
+        // between the feet, which is exactly where the origin now is.
+        b.drawImage(f.img, f.sx, f.sy, f.sw, f.sh, -f.ax, -f.ay + breathe, f.dw, f.dh);
+        b.restore();
 
-        // contact shadow: tight and dark under the feet, soft further out
-        ctx.fillStyle = 'rgba(24,14,28,0.34)';
-        ctx.beginPath(); ctx.ellipse(0, 2, 30, 7, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = 'rgba(24,14,28,0.30)';
-        ctx.beginPath(); ctx.ellipse(0, 1, 17, 4.5, 0, 0, Math.PI * 2); ctx.fill();
-
-        if (opts.reflect) this._reflect(ctx, ox, oy, BW, BH, t);
-
-        const sm = ctx.imageSmoothingEnabled;
-        ctx.imageSmoothingEnabled = true;      // downsampling 3x is the point
-        const dw = BW / SS, dh = BH / SS;
-        ctx.drawImage(this._outline, 0, 0, BW, BH, -ox, -oy, dw, dh);
-        ctx.drawImage(this._buf,     0, 0, BW, BH, -ox, -oy, dw, dh);
-        ctx.drawImage(this._bounce,  0, 0, BW, BH, -ox, -oy, dw, dh);
-        ctx.drawImage(this._rim,     0, 0, BW, BH, -ox, -oy, dw, dh);
-        ctx.imageSmoothingEnabled = sm;
-
-        // atmospheric haze for anything standing far back
-        if (opts.haze) {
-            ctx.globalCompositeOperation = 'source-atop';
-            ctx.fillStyle = opts.haze;
-            ctx.fillRect(-ox, -oy, BW / SS, BH / SS);
-            ctx.globalCompositeOperation = 'source-over';
-        }
-        ctx.restore();
+        this._compositeWarrior(ctx, { facing, cx, groundY, t, opts, ox, oy, BW, BH,
+                                      lighting: f.lighting === 'engine' ? 'engine' : 'baked' });
     },
 
     // Mirror the fighter into the water, sliced into bands so each band can be
