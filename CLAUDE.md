@@ -149,6 +149,40 @@ Also worth building regardless of where the art comes from: normal/AO/emissive
 passes from Blender so the engine lights sprites with its own `SUN` instead of
 relying on baked highlights.
 
+## PixelLab
+
+An AI pixel-art studio, ~70 tools over MCP. Docs: `https://api.pixellab.ai/mcp/docs`.
+Generation is asynchronous everywhere — submit, get an id, poll (`get_character`,
+`get_image`, `get_portrait_character`); downloads need no re-authentication
+because the UUID is the access key.
+
+**Start with High Five, not Wrath.** `highfive.js` is already 16×16 pixel art
+built procedurally in `_buildSprites()`, with a single pose the code admits is
+"honest to the era being imitated". `create_character` at 16–32 px with 4 or 8
+directions replaces that one function and gives real facings instead of a
+mirrored sprite. It is cheap, self-contained, and carries no style risk — which
+makes it the honest test of output quality before spending 66 jobs on Wrath.
+
+What maps where:
+
+| App | Tools |
+|---|---|
+| High Five | `create_character` (16–32 px, 4/8 directions) — swaps out `_buildSprites()` |
+| Wrath | `create_character` + `create_character_state` for the six poses; `create_portrait_character` for the 11 prelude portraits; `animate_character` if static poses are ever replaced by frames at `_advancePose`; `create_ui_asset`; `create_font` |
+| Sands of Mali | `create_topdown_tileset`, `create_path_tiles`, `create_building_kit`; `create_map_object` + `place_map_object`/`move_map_object`; `create_image_pro` for the 18 event cards and the destination-city pages |
+| The rest | `create_ui_asset` for picker icons (currently emoji), `create_image_pixflux` for food icons across the 542-entry library (currently SF Symbol names), small illustrations per KGE story |
+
+Freeform: `create_image_pixflux` / `pixen` / `pro` (Pro adds reference images,
+style matching, 20–40 candidates), plus `edit_image` and `inpaint_image` to fix
+a result rather than reroll it.
+
+Constraints that shape the plan:
+
+- **2–5 minutes per generation.** Wrath is 11 fighters × 6 poses = 66 jobs,
+  hours of wall time and real credits. Never batch the whole roster blind.
+- **128 px ceiling** on characters (160 for portraits). Fine for pixel art.
+- **Costs credits**; `get_balance` and `list_jobs` before a large run.
+
 ## Environment
 
 Blender 5.2 LTS at `/Applications/Blender.app`, blender-mcp addon permanently
@@ -157,6 +191,20 @@ Blender works without the MCP. PixelLab MCP registered at project scope
 (`https://api.pixellab.ai/mcp`, docs at `/mcp/docs`). **Both need a Claude Code
 restart before their tools are callable.** `uv` and Pillow are installed.
 Homebrew, ImageMagick, `cwebp` and Node are **not**.
+
+## Picking up next
+
+Agreed plan, in order:
+
+1. **High Five sprites via PixelLab** — generate a character at 16–32 px with
+   directions, replace `_buildSprites()` in `highfive.js`, and judge the output
+   quality on something cheap.
+2. If that looks good, **one Wrath fighter**: base character plus five
+   `create_character_state` poses, packed with `tools/pack_atlas.py`, dropped in
+   and screenshotted beside a procedural opponent — the same comparison that
+   settled the Blender attempt. Requires the nearest-neighbour branch in
+   `sprites.js` first (see the Wrath section).
+3. Only then the other ten fighters, and the prelude portraits.
 
 ## Outstanding
 
