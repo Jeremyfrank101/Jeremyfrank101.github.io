@@ -180,11 +180,17 @@ const DesertGame = {
                     <p>Mansa Musa has returned from Mecca and the city is thick with builders, scholars and caravan men. You have <strong>1,000 cowries</strong> and an intention to trade across the Sahara.</p>
                     <p class="dg-hint">Provision at the market — every piece of kit earns its price now — buy a camel to ride, and take a commission at Sankore. Follow the pillar of light to your destination, watch your water and food on the way, and the caravan will carry you home rich. Deliver all six commissions to master the trans-Saharan trade.</p>
                     <div class="dg-controls-help">
-                        <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span>
-                        <span><kbd>Shift</kbd> run</span>
-                        <span>Mouse look</span>
-                        <span><kbd>E</kbd> talk</span>
-                        <span><kbd>Esc</kbd> release cursor</span>
+                        ${this._isTouch() ? `
+                            <span>Stick to walk</span>
+                            <span>Drag anywhere to look</span>
+                            <span>Tap <strong>Talk</strong> near someone</span>
+                        ` : `
+                            <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span>
+                            <span><kbd>Shift</kbd> run</span>
+                            <span>Mouse look</span>
+                            <span><kbd>E</kbd> talk</span>
+                            <span><kbd>Esc</kbd> release cursor</span>
+                        `}
                     </div>
                     <button class="dg-btn dg-begin" type="button">Enter the City</button>
                 </div>
@@ -292,8 +298,13 @@ const DesertGame = {
         this._renderMeters();
     },
 
+    // A pointer that cannot hover, or a screen that reports touch points.
+    // maxTouchPoints catches Android tablets and iPads reporting as desktop,
+    // which the other two checks between them miss.
     _isTouch() {
-        return window.matchMedia('(hover: none)').matches || 'ontouchstart' in window;
+        return window.matchMedia('(hover: none), (pointer: coarse)').matches
+            || 'ontouchstart' in window
+            || (navigator.maxTouchPoints || 0) > 0;
     },
 
     // ---------- Scene ----------

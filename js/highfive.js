@@ -135,7 +135,9 @@ const HighFive = {
                                 <span>${s.name}</span>
                             </button>`).join('')}
                     </div>
-                    <p class="hf-hint"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows to move</p>
+                    <p class="hf-hint">${this._isTouch()
+                        ? 'Drag the stick in the corner to move'
+                        : '<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows to move'}</p>
                 </div>
             </div>
         </div>`;
@@ -166,7 +168,9 @@ const HighFive = {
     },
 
     _isTouch() {
-        return window.matchMedia('(hover: none)').matches || 'ontouchstart' in window;
+        return window.matchMedia('(hover: none), (pointer: coarse)').matches
+            || 'ontouchstart' in window
+            || (navigator.maxTouchPoints || 0) > 0;
     },
 
     _choose(id) {
@@ -606,12 +610,15 @@ const HighFive = {
     },
 
     _fit() {
-        // Keep the canvas pixel-perfect: integer scale where it fits.
         const cw = this.container.clientWidth, chh = this.container.clientHeight;
         if (!cw || !chh) return;
-        const scale = Math.max(1, Math.min(Math.floor(cw / this.W), Math.floor(chh / this.H)));
-        this.dom.canvas.style.width = (this.W * scale) + 'px';
-        this.dom.canvas.style.height = (this.H * scale) + 'px';
+        // Integer scaling keeps the pixels square, but only once there is room
+        // for 2x. Clamping at a minimum of 1x left a 320px canvas marooned in
+        // the middle of a phone screen; below 2x we fill the box instead.
+        const raw = Math.min(cw / this.W, chh / this.H);
+        const scale = raw >= 2 ? Math.floor(raw) : raw;
+        this.dom.canvas.style.width = Math.floor(this.W * scale) + 'px';
+        this.dom.canvas.style.height = Math.floor(this.H * scale) + 'px';
     },
 
     _loop() {

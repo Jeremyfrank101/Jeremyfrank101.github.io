@@ -1775,7 +1775,11 @@
 .dg-root:has(.dg-trail:not(.hidden)) .dg-reticle,
 .dg-root:has(.dg-trail:not(.hidden)) .dg-hud,
 .dg-root:has(.dg-trail:not(.hidden)) .dg-quest-banner,
-.dg-root:has(.dg-trail:not(.hidden)) .dg-meters { display: none; }
+.dg-root:has(.dg-trail:not(.hidden)) .dg-meters,
+/* the thumb stick and the Talk button belong to the 3D city, not the map */
+.dg-root:has(.dg-trail:not(.hidden)) .dg-stick,
+.dg-root:has(.dg-trail:not(.hidden)) .dg-touch-interact,
+.dg-root:has(.dg-trail:not(.hidden)) .dg-prompt { display: none; }
 .dg-map-btn { width: 100%; margin: 4px 0 12px; }
 
 .tr-map-screen, .tr-journey {
@@ -1972,3 +1976,51 @@
 .il-tag.il-divine { background: rgba(200,135,58,0.25); color: #f0d9a8; }
 /* the prelude reads; give it the tall layout rather than the battle split */
 .il-root.il-reading .il-stage { flex: 0 1 auto; max-height: 34vh; }
+
+/* ---------- phones: all three games ---------- */
+@media (max-width: 899px) {
+    /* Wrath. The stage is flex:0 1 auto with a content-driven height, and the
+       canvas sizes itself from the stage — which collapsed the pair to 69px
+       on a phone. A floor on the stage breaks the loop. */
+    .il-root .il-stage { min-height: 22vh; max-height: 26vh; }
+    .il-root.il-menu .il-stage    { min-height: 20vh; max-height: 26vh; }
+    .il-root.il-reading .il-stage { min-height: 18vh; max-height: 24vh; }
+    /* The duel HUD, four moves and the ultimate do not fit under the stage on
+       a phone, and .il-root is overflow:hidden — so without this the moves
+       are simply unreachable. Let the controls pane scroll on its own. */
+    .il-ui { padding: 0 12px 14px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+    .il-moves { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .il-move { padding: 10px 11px; }
+    .il-move-name { font-size: 0.92rem; }
+    /* thumb-sized targets */
+    .il-btn, .il-move, .il-hero { min-height: 46px; }
+    .il-prelude h2 { font-size: 1.5rem; }
+    .il-pre-lead { font-size: 0.94rem; padding-left: 11px; }
+
+    /* High Five and Mali both want every pixel of height they can get. */
+    .hf-host, .highfive-host, .mali-host, .game-host { min-height: 0; }
+
+    /* The Sahara map is 1000px of SVG; let it scroll sideways rather than
+       shrink the towns into illegibility. */
+    .tr-map-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .tr-map { min-width: 720px; }
+    .tr-head h2 { font-size: 1.2rem; }
+    .tr-close { position: static; margin-top: 10px; width: 100%; }
+    .tr-routelist { grid-template-columns: 1fr; }
+    .tr-btn, .tr-route-card { min-height: 46px; }
+    /* Stops are centred on their position, so the first and last labels hang
+       half off the ends. Inset the track to give them room. */
+    .tr-track { height: 92px; margin: 20px 30px 8px; }
+    .tr-stop b { font-size: 0.6rem; max-width: 58px; }
+    .tr-choices .tr-btn { width: 100%; }
+    .tr-tip { font-size: 0.8rem; bottom: 10px; }
+}
+
+/* Very narrow phones: the duel HUD and the trail meters need to wrap. */
+@media (max-width: 420px) {
+    .il-move-name { font-size: 0.86rem; }
+    .il-move-meta { font-size: 0.7rem; }
+    .tr-meters { gap: 6px 12px; font-size: 0.78rem; }
+    .tr-bar { width: 74px; }
+    .tr-rc-stops { font-size: 0.66rem; }
+}
