@@ -87,7 +87,10 @@ const CozyCookBook = {
         try {
             const [folders, recipes, shares] = await Promise.all([
                 this.db('folders').select('*').order('name'),
-                this.db('recipes').select('id,title,ingredients,steps,made_count,created_at,folder_id,user_id,meal')
+                // Columns are listed rather than *, to leave the image_data
+                // blob on the server. Anything new on this table has to be
+                // added here or it silently arrives as undefined.
+                this.db('recipes').select('id,title,ingredients,steps,made_count,created_at,folder_id,user_id,meal,position,is_public')
                     .order('created_at', { ascending: false }),
                 this.db('cookbook_shares').select('*')
             ]);
@@ -129,7 +132,13 @@ const CozyCookBook = {
     isMine(row) { return row && (row.user_id || row.owner_id) === this.uid(); },
 
     myFolders()     { return this._ordered(this.data.folders.filter(f => f.user_id === this.uid())); },
-    sharedFolders() { return this._ordered(this.data.folders.filter(f => f.user_id !== this.uid())); },
+    // Owned by another person. Starter cookbooks are owned by nobody, so they
+    // have to be excluded here or they turn up as "shared by someone".
+    sharedFolders() {
+        return this._ordered(this.data.folders.filter(
+            f => !f.is_public && f.user_id !== this.uid()));
+    },
+    starterFolders() { return this._ordered(this.data.folders.filter(f => f.is_public)); },
 
     // Invitations sent to me that I have not answered yet.
     pendingForMe() {
@@ -240,18 +249,23 @@ const CozyCookBook = {
     go(view) { this.view = view; this.render(); this.dom.body.scrollTop = 0; },
 
     renderShelf() {
-        const mine = this.myFolders(), shared = this.sharedFolders(), pending = this.pendingForMe();
+        const mine = this.myFolders(), shared = this.sharedFolders(),
+              starter = this.starterFolders(), pending = this.pendingForMe();
         const card = (f, owned) => {
             const rs = this.recipesIn(f.id);
             const shares = this.sharesOf(f.id);
-            return `<div class="ckb-folder" data-key="${f.id}" data-kind="folder" data-folder="${f.id}" role="button" tabindex="0">
-                <span class="ui-grip" data-drag-handle aria-hidden="true"></span>
+            // Only your own cookbooks can be dragged into a new order; the
+            // others have no position you are allowed to write.
+            const drag = owned ? '<span class="ui-grip" data-drag-handle aria-hidden="true"></span>' : '';
+            return `<div class="ckb-folder${f.is_public ? ' ckb-starter' : ''}" data-key="${f.id}" data-kind="folder" data-folder="${f.id}" role="button" tabindex="0">
+                ${drag}
                 <span class="ckb-folder-spine" aria-hidden="true"></span>
                 <span class="ckb-folder-main">
                     <strong>${this.esc(f.name)}</strong>
                     <small>${rs.length} recipe${rs.length === 1 ? '' : 's'}${
                         owned && shares.length ? ` · shared with ${shares.length}` : ''}${
-                        owned ? '' : ` · from ${this.esc(this.who(f.user_id))}`}</small>
+                        f.is_public ? '' : (owned ? '' : ` · from ${this.esc(this.who(f.user_id))}`)}</small>
+                    ${f.blurb ? `<small class="ckb-blurb">${this.esc(f.blurb)}</small>` : ''}
                 </span>
                 <span class="ckb-go" aria-hidden="true">›</span>
             </div>`;
@@ -288,6 +302,13 @@ const CozyCookBook = {
         ${shared.length ? `<div class="ckb-card">
             <h3>Shared with you</h3>
             ${shared.map(f => card(f, false)).join('')}
+        </div>` : ''}
+
+        ${starter.length ? `<div class="ckb-card"${this.searchTerm ? ' hidden' : ''}>
+            <h3>Recipe library</h3>
+            <p class="ckb-dim">Here for everyone, and read-only. Copy anything you
+               like into a cookbook of your own and it becomes yours to edit.</p>
+            ${starter.map(f => card(f, false)).join('')}
         </div>` : ''}`;
     },
 
@@ -323,10 +344,13 @@ const CozyCookBook = {
         <div class="ckb-card">
             <h3>${this.esc(f.name)}</h3>
             <p class="ckb-dim">${rs.length} recipe${rs.length === 1 ? '' : 's'}${
-                owned ? '' : ` · ${this.esc(this.who(f.user_id))}'s cookbook, read only`}</p>
-            ${rs.length ? `<div class="ckb-recipes" data-drag="recipe">${rs.map(r => `
+                f.is_public ? ' · from the recipe library, read only'
+                            : (owned ? '' : ` · ${this.esc(this.who(f.user_id))}'s cookbook, read only`)}</p>
+            ${f.blurb ? `<p class="ckb-dim">${this.esc(f.blurb)}</p>` : ''}
+            ${f.is_public ? `<button class="ckb-btn" data-copy-folder="${f.id}">Copy this cookbook to mine</button>` : ''}
+            ${rs.length ? `<div class="ckb-recipes"${owned ? ' data-drag="recipe"' : ''}>${rs.map(r => `
                 <div class="ckb-recipe" data-key="${r.id}" data-kind="recipe" data-recipe="${r.id}" role="button" tabindex="0">
-                    <span class="ui-grip" data-drag-handle aria-hidden="true"></span>
+                    ${owned ? '<span class="ui-grip" data-drag-handle aria-hidden="true"></span>' : ''}
                     <span class="ckb-recipe-main">
                         <strong>${this.esc(r.title)}</strong>
                         <small>${r.meal ? this.esc(r.meal) + ' · ' : ''}${
@@ -394,11 +418,14 @@ const CozyCookBook = {
         <div class="ckb-card ckb-recipe-head">
             <h2>${this.esc(r.title)}</h2>
             <p class="ckb-dim">${r.meal ? this.esc(r.meal) + ' · ' : ''}made ${r.made_count || 0}×${
-                owned ? '' : ` · ${this.esc(this.who(r.user_id))}'s recipe, read only`}</p>
+                r.is_public ? ' · from the recipe library, read only'
+                            : (owned ? '' : ` · ${this.esc(this.who(r.user_id))}'s recipe, read only`)}</p>
             ${owned ? `<div class="ckb-row">
                 <button class="ckb-btn ckb-primary" data-made="${r.id}">I made this</button>
                 <button class="ckb-btn ckb-ghost" data-reset-checks>Clear ticks</button>
-            </div>` : ''}
+            </div>` : `<div class="ckb-row">
+                <button class="ckb-btn ckb-primary" data-copy-recipe="${r.id}">Copy to my cookbooks</button>
+            </div>`}
         </div>
 
         <div class="ckb-card">
@@ -494,6 +521,74 @@ const CozyCookBook = {
         all('[data-unshare]', b => b.addEventListener('click', () => this.unshare(b.dataset.unshare)));
         all('[data-accept]', b => b.addEventListener('click', () => this.answer(b.dataset.accept, 'accepted')));
         all('[data-decline]', b => b.addEventListener('click', () => this.answer(b.dataset.decline, null)));
+        all('[data-copy-recipe]', b => b.addEventListener('click', () => this.copyRecipe(b.dataset.copyRecipe)));
+        all('[data-copy-folder]', b => b.addEventListener('click', () => this.copyFolder(b.dataset.copyFolder)));
+    },
+
+    // ---------- copying out of the library ----------
+    //
+    // Library recipes belong to nobody and cannot be edited. Copying makes a
+    // genuine duplicate owned by you — new ids throughout, so ticking a box on
+    // your copy never touches the original or anyone else's.
+
+    _dupLines(list, textKey) {
+        return (list || []).map(x => ({
+            id: this._lineId(),
+            [textKey]: x[textKey],
+            isChecked: false
+        }));
+    },
+
+    // Where a copied recipe should land: a cookbook named after the source, so
+    // copying three Italian recipes collects them instead of scattering them.
+    _copyTargetFor(sourceFolder) {
+        const wanted = sourceFolder ? sourceFolder.name : 'Saved recipes';
+        const existing = this.myFolders().find(f => f.name === wanted);
+        if (existing) return existing;
+        const row = {
+            id: Sync.newId(), name: wanted, user_id: this.uid(),
+            position: (this.myFolders().length + 1) * (UI.GAP || 1024),
+            created_at: new Date().toISOString()
+        };
+        this.data.folders.push(row);
+        this._write('folders', 'insert', row);
+        return row;
+    },
+
+    copyRecipe(id, into) {
+        const src = this.recipe(id);
+        if (!src) return;
+        const target = into || this._copyTargetFor(this.folder(src.folder_id));
+        const peers = this.recipesIn(target.id);
+        const copy = {
+            id: Sync.newId(),
+            title: src.title,
+            ingredients: this._dupLines(src.ingredients, 'name'),
+            steps: this._dupLines(src.steps, 'text'),
+            folder_id: target.id,
+            user_id: this.uid(),
+            meal: src.meal,
+            made_count: 0,
+            position: (peers.length + 1) * (UI.GAP || 1024),
+            created_at: new Date().toISOString()
+        };
+        this.data.recipes.push(copy);
+        this._write('recipes', 'insert', copy);
+        if (!into) {
+            this._toast(`Copied to “${target.name}”.`);
+            this.go({ name: 'recipe', id: copy.id });
+        }
+        return copy;
+    },
+
+    copyFolder(id) {
+        const src = this.folder(id);
+        if (!src) return;
+        const target = this._copyTargetFor(src);
+        const rs = this.recipesIn(id);
+        rs.forEach(r => this.copyRecipe(r.id, target));
+        this._toast(`Copied ${rs.length} recipe${rs.length === 1 ? '' : 's'} to “${target.name}”.`);
+        this.go({ name: 'folder', id: target.id });
     },
 
     // The iOS app writes uppercase UUIDs for line ids; match it so the two

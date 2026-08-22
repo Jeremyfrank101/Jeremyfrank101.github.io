@@ -1,0 +1,5 @@
+
+/* Starter cookbooks from the shared library. Marked with a warm spine so they
+   read as reference material rather than something of yours that went stale. */
+.ckb-folder.ckb-starter .ckb-folder-spine { background: var(--accent); opacity: 0.55; }
+.ckb-blurb { display: block; margin-top: 3px; opacity: 0.72; line-height: 1.35; }
