@@ -1928,3 +1928,19 @@
 .tr-final h2 { margin: 0 0 6px; font-size: 1.7rem; }
 .tr-final-sub { color: #a08a67; font-size: 0.86rem; }
 .tr-final.lost h2 { color: #c4503a; }
+
+/* CozyHealth — quick fractions of a recipe. */
+.chx-fracs { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
+.chx-frac {
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: inherit;
+    font: inherit;
+    font-size: 0.9rem;
+    min-width: 42px;
+    padding: 7px 10px;
+    border-radius: 50px;
+    cursor: pointer;
+}
+.chx-frac:hover { border-color: var(--accent); }
+.chx-frac.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }

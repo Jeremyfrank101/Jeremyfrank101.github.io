@@ -853,22 +853,72 @@ const CozyHealth = {
 
     openRecipe: null,
 
+    // Amounts are multipliers, not percentages: a recipe is a thing you eat a
+    // half or a quarter of, and typing 0.5 is how people say that. The chips
+    // cover the fractions anyone actually uses.
+    recipeAmt: 1,
+    recipeUnit: 'serving',
+    FRACTIONS: [
+        { label: '¼',  v: 0.25 }, { label: '⅓', v: 0.3333 }, { label: '½', v: 0.5 },
+        { label: '⅔',  v: 0.6667 }, { label: '¾', v: 0.75 }, { label: '1', v: 1 },
+        { label: '1½', v: 1.5 },  { label: '2', v: 2 }
+    ],
+
+    // How many whole recipes an amount comes to.
+    _recipeFactor(n) {
+        const v = Number(this.recipeAmt);
+        if (!isFinite(v) || v <= 0) return null;
+        const servings = Number(n.servings) || 1;
+        return this.recipeUnit === 'recipe' ? v : v / servings;
+    },
+
+    // Recipes get the same treatment as the food library: a search box rather
+    // than every recipe laid out as a chip. A cookbook of forty recipes made
+    // the Food tab unusable, and it is the same problem the library had.
+    recipeSearch: '',
+
+    searchRecipes(q) {
+        const t = (q || '').trim().toLowerCase();
+        if (t.length < 2) return [];
+        return this.data.recipes
+            .filter(r => (r.title || '').toLowerCase().includes(t))
+            .sort((a, b) => {
+                const ai = a.title.toLowerCase().indexOf(t), bi = b.title.toLowerCase().indexOf(t);
+                return ai - bi || a.title.localeCompare(b.title);
+            })
+            .slice(0, 12);
+    },
+
+    // The handful you have actually costed, shown as one-tap chips. The rest
+    // are behind the search, exactly like the 228-item library.
+    _recipeReady() {
+        return this.data.recipes
+            .filter(r => this.nutritionFor(r.id))
+            .slice(0, 6);
+    },
+
     _recipeCard() {
         const rs = this.data.recipes;
         if (!rs.length) return '';
         if (this.openRecipe) return this._recipePanel(this.openRecipe);
+        const ready = this._recipeReady();
 
         return `<div class="chx-card">
             <h3>From your cookbook</h3>
-            <div class="chx-chips">
-                ${rs.map(r => {
+            ${ready.length ? `<div class="chx-chips">
+                ${ready.map(r => {
                     const n = this.nutritionFor(r.id);
-                    const per = n ? Math.round((n.calories || 0) / (Number(n.servings) || 1)) : null;
-                    return `<button class="chx-chip ${n ? 'chx-again' : ''}" data-recipe="${r.id}">
-                        ${this.esc(r.title)}
-                        <small>${n ? `${this.fmt(per)} kcal a serving` : 'work out nutrition'}</small>
+                    const per = Math.round((n.calories || 0) / (Number(n.servings) || 1));
+                    return `<button class="chx-chip chx-again" data-recipe="${r.id}">
+                        ${this.esc(r.title)}<small>${this.fmt(per)} kcal a serving</small>
                     </button>`;
                 }).join('')}
+            </div>` : `<p class="chx-dim">No recipe has been costed yet. Find one below and work out its nutrition once — after that it is a single tap.</p>`}
+
+            <div class="chx-search">
+                <input type="text" id="chx-recipe-search" placeholder="Search your ${rs.length} recipes…"
+                       autocomplete="off" aria-label="Search your recipes">
+                <div class="chx-results" id="chx-recipe-results"></div>
             </div>
         </div>`;
     },
@@ -921,11 +971,18 @@ const CozyHealth = {
             ${n ? `<div class="chx-recipe-log">
                 <h3>Log some of it</h3>
                 <div class="chx-amount">
-                    <input type="number" id="chx-r-amt" value="100" min="0" step="any" aria-label="Amount">
+                    <input type="number" id="chx-r-amt" value="${this.recipeAmt}" min="0" step="any"
+                           aria-label="How much">
                     <div class="chx-units">
-                        <button class="chx-unit active" data-runit="serving">% of a serving</button>
-                        <button class="chx-unit" data-runit="recipe">% of the recipe</button>
+                        <button class="chx-unit ${(this.recipeUnit||'serving')==='serving' ? 'active' : ''}"
+                                data-runit="serving">servings</button>
+                        <button class="chx-unit ${this.recipeUnit==='recipe' ? 'active' : ''}"
+                                data-runit="recipe">of the recipe</button>
                     </div>
+                </div>
+                <div class="chx-fracs">
+                    ${this.FRACTIONS.map(f => `<button class="chx-frac ${this.recipeAmt == f.v ? 'active' : ''}"
+                        data-frac="${f.v}">${f.label}</button>`).join('')}
                 </div>
                 <p class="chx-dim" id="chx-r-preview"></p>
                 <button class="chx-btn chx-primary" id="chx-r-log">Log it</button>
@@ -938,13 +995,18 @@ const CozyHealth = {
         if (!el || !this.openRecipe) return;
         const n = this.nutritionFor(this.openRecipe);
         if (!n) return;
-        const v = Number(document.getElementById('chx-r-amt').value);
-        const unit = this.recipeUnit || 'serving';
+        const factor = this._recipeFactor(n);
+        if (factor == null) { el.textContent = 'Enter an amount above zero.'; return; }
         const servings = Number(n.servings) || 1;
-        if (!isFinite(v) || v <= 0) { el.textContent = 'Enter an amount above zero.'; return; }
-        const factor = unit === 'recipe' ? v / 100 : (v / 100) / servings;
-        el.textContent = `That is ${this.fmt((n.calories || 0) * factor)} kcal, `
-            + `${this.fmt((n.protein_grams || 0) * factor, 1)}g protein.`;
+        const asServings = factor * servings;
+        el.textContent =
+            `${this.fmt(this.recipeAmt, 2)} ${this.recipeUnit === 'recipe'
+                ? 'of the whole recipe' : (this.recipeAmt == 1 ? 'serving' : 'servings')}`
+            + ` — ${this.fmt((n.calories || 0) * factor)} kcal, `
+            + `${this.fmt((n.protein_grams || 0) * factor, 1)}g protein`
+            + (this.recipeUnit === 'recipe'
+                ? ` (${this.fmt(asServings, 2)} serving${asServings === 1 ? '' : 's'})` : '')
+            + '.';
     },
 
     nutritionFor(recipeId) {
@@ -971,19 +1033,20 @@ const CozyHealth = {
 
     // Log a portion of a recipe. `unit` is 'serving' (a share of one portion)
     // or 'recipe' (a share of the whole thing).
-    async logRecipe(recipeId, value, unit) {
+    async logRecipe(recipeId) {
         const r = this.data.recipes.find(x => x.id === recipeId);
         const n = this.nutritionFor(recipeId);
         if (!r || !n) return;
-        const v = Number(value);
-        if (!isFinite(v) || v <= 0) { this._toast('Enter an amount above zero.'); return; }
 
+        // factor is in whole recipes, because that is what the stored totals
+        // describe; a serving is one divided by however many it makes.
+        const factor = this._recipeFactor(n);
+        if (factor == null) { this._toast('Enter an amount above zero.'); return; }
+        const v = Number(this.recipeAmt);
         const servings = Number(n.servings) || 1;
-        // fraction of the WHOLE recipe, which is what the totals describe
-        const factor = unit === 'recipe' ? v / 100 : (v / 100) / servings;
-        const label = unit === 'recipe'
-            ? `${this.fmt(v)}% of the recipe`
-            : `${this.fmt(v)}% of a serving`;
+        const label = this.recipeUnit === 'recipe'
+            ? `${this.fmt(v, 2)} of the recipe`
+            : `${this.fmt(v, 2)} serving${v == 1 ? '' : 's'}`;
 
         const ident = {};
         for (const k of Object.values(this.LIB_TO_ENTRY)) ident[k] = k;
@@ -994,10 +1057,15 @@ const CozyHealth = {
             meal_type: r.meal || this.timeSlot(),
             date: new Date().toISOString(),
             recipe_id: recipeId,
-            quantity: unit === 'recipe' ? factor * servings : v / 100,
+            quantity: factor * servings,          // always recorded in servings
             quantity_unit: 'serving',
             ...this._scaled(n, ident, factor)
         }, 'meals', `${r.title} — ${label}`, 2);
+        // Back to one serving, the same way the food amount bar resets. Left
+        // as it was, the next tap silently logs whatever the last one did.
+        this.recipeAmt = 1;
+        this.recipeUnit = 'serving';
+        this.render();
     },
 
     // ---------- Food ----------
@@ -1353,14 +1421,53 @@ const CozyHealth = {
         this.container.querySelectorAll('[data-runit]').forEach(b =>
             b.addEventListener('click', () => {
                 this.recipeUnit = b.dataset.runit;
-                this.container.querySelectorAll('[data-runit]').forEach(x =>
+                // A serving and a whole recipe are different sizes, so the
+                // sensible default amount differs too.
+                this.recipeAmt = 1;
+                this.render();
+            }));
+        this.container.querySelectorAll('[data-frac]').forEach(b =>
+            b.addEventListener('click', () => {
+                this.recipeAmt = Number(b.dataset.frac);
+                const input = document.getElementById('chx-r-amt');
+                if (input) input.value = this.recipeAmt;
+                this.container.querySelectorAll('[data-frac]').forEach(x =>
                     x.classList.toggle('active', x === b));
                 this._recipePreview();
             }));
-        on('chx-r-amt', 'input', () => this._recipePreview());
-        on('chx-r-log', 'click', () => this.logRecipe(this.openRecipe,
-            document.getElementById('chx-r-amt').value, this.recipeUnit || 'serving'));
+        on('chx-r-amt', 'input', () => {
+            this.recipeAmt = document.getElementById('chx-r-amt').value;
+            this.container.querySelectorAll('[data-frac]').forEach(x =>
+                x.classList.toggle('active', Number(x.dataset.frac) == this.recipeAmt));
+            this._recipePreview();
+        });
+        on('chx-r-log', 'click', () => this.logRecipe(this.openRecipe));
         this._recipePreview();
+
+        // recipe search, mirroring the food-library one above
+        const rsearch = $('chx-recipe-search');
+        if (rsearch) {
+            const out = $('chx-recipe-results');
+            const run = () => {
+                // Below the two-character minimum there is nothing useful to
+                // say, so say nothing rather than "no match".
+                if (rsearch.value.trim().length < 2) { out.innerHTML = ''; return; }
+                const hits = this.searchRecipes(rsearch.value);
+                out.innerHTML = hits.length
+                    ? hits.map(r => {
+                        const n = this.nutritionFor(r.id);
+                        const per = n ? Math.round((n.calories || 0) / (Number(n.servings) || 1)) : null;
+                        return `<button class="chx-result" data-recipe="${r.id}">
+                            <span>${this.esc(r.title)}</span>
+                            <small>${n ? `${this.fmt(per)} kcal a serving` : 'nutrition not worked out yet'}</small>
+                          </button>`;
+                      }).join('')
+                    : '<p class="chx-dim">No recipe of yours matches that.</p>';
+                out.querySelectorAll('[data-recipe]').forEach(b =>
+                    b.addEventListener('click', () => { this.openRecipe = b.dataset.recipe; this.render(); }));
+            };
+            rsearch.addEventListener('input', run);
+        }
 
         this.container.querySelectorAll('[data-quick]').forEach(b =>
             b.addEventListener('click', () => this.quickAdd(b.dataset.quick)));
