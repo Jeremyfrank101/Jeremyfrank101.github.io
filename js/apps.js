@@ -34,6 +34,14 @@ const Apps = {
             color: '#b8603f'
         },
         {
+            id: 'kge',
+            name: 'KGE Stories',
+            tagline: 'Kannada and Greek, from English',
+            blurb: 'Fifteen stories told three times over — English, then Kannada, then Greek. Tap any sentence for how to say it and what the grammar did.',
+            icon: '\u{1F4D6}',
+            color: '#5b7fa8'
+        },
+        {
             id: 'iliad',
             name: 'Wrath',
             tagline: 'Duels of the Iliad',
@@ -64,6 +72,7 @@ const Apps = {
         cozyhome: 'app-screen',
         health:   'health-screen',
         cookbook: 'cookbook-screen',
+        kge:      'kge-screen',
         iliad:    'iliad-screen',
         mali:     'mali-screen',
         highfive: 'highfive-screen'
@@ -124,6 +133,9 @@ const Apps = {
         } else if (id === 'cookbook') {
             const host = document.getElementById('cookbook-host');
             if (host) CozyCookBook.mount(host);
+        } else if (id === 'kge') {
+            const host = document.getElementById('kge-host');
+            if (host) KGE.mount(host);
         } else if (id === 'iliad') {
             const host = document.getElementById('iliad-host');
             if (host) Iliad.mount(host);
@@ -139,6 +151,7 @@ const Apps = {
     _teardown(id) {
         if (id === 'health') CozyHealth.unmount();
         else if (id === 'cookbook') CozyCookBook.unmount();
+        else if (id === 'kge') KGE.unmount();
         else if (id === 'iliad') Iliad.unmount();
         else if (id === 'mali') Game.unmount();
         else if (id === 'highfive') HighFive.unmount();
