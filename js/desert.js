@@ -119,6 +119,7 @@ const DesertGame = {
         this.food = this.FOOD_MAX;
         this.exposure = 0;
         this.outside = false;
+        this.route = null;
         this.riding = false;
         this._eye = undefined;
         this.activeNPC = null;
@@ -211,6 +212,8 @@ const DesertGame = {
                 </div>
             </div>
 
+            <div class="dg-overlay dg-trail hidden"><div class="dg-trail-host"></div></div>
+
             <div class="dg-overlay dg-victory hidden">
                 <div class="dg-card dg-death-card">
                     <div class="dg-victory-icon">👑</div>
@@ -239,6 +242,8 @@ const DesertGame = {
             navDist: q('.dg-nav-dist'),
             waterFill: q('.dg-meter-fill.water'),
             foodFill: q('.dg-meter-fill.food'),
+            trail: q('.dg-trail'),
+            trailHost: q('.dg-trail-host'),
             arrival: q('.dg-arrival'),
             arrivalTitle: q('.dg-arrival-title'),
             arrivalText: q('.dg-arrival-text'),
@@ -1626,8 +1631,9 @@ const DesertGame = {
 
         else {
             body = `
-            <p class="dg-speech">"Timbuktu keeps more books than gold, but the gold pays for the books. Choose a road and I will write you a commission."</p>
-            <div class="dg-quests">${this.QUESTS.map(q => {
+            <p class="dg-speech">"Timbuktu keeps more books than gold, but the gold pays for the books. Look at the map, choose a road, and I will write you a commission."</p>
+            <button class="dg-btn dg-map-btn" data-openmap>Unroll the map of the Sahara</button>
+            <div class="dg-quests">${[].map(q => {
                 const done = this.completed.includes(q.id);
                 const taken = this.quest && this.quest.id === q.id;
                 const paces = Math.round(Math.hypot(q.pos.x, q.pos.z));
@@ -1659,6 +1665,8 @@ const DesertGame = {
             b.addEventListener('click', () => this._buy(b.dataset.buy)));
         this.dom.panelCard.querySelectorAll('[data-quest]').forEach(b =>
             b.addEventListener('click', () => this._acceptQuest(b.dataset.quest)));
+        this.dom.panelCard.querySelectorAll('[data-openmap]').forEach(b =>
+            b.addEventListener('click', () => this._openMap()));
     },
 
     _buy(id) {
@@ -1680,6 +1688,84 @@ const DesertGame = {
         }
         this._renderHUD();
         this._renderPanel();
+    },
+
+    // ---------- the map and the road ----------
+    //
+    // The commission is chosen off a real map, and the journey itself is the
+    // Oregon-Trail screen in trail.js rather than a walk toward a beacon: the
+    // interesting part of a trans-Saharan crossing is the halts and what
+    // happens between them, not the sand in between.
+
+    _openMap() {
+        this._closePanel();
+        if (document.pointerLockElement === this.canvas) document.exitPointerLock();
+        this.state = 'map';
+        this.dom.trail.classList.remove('hidden');
+        Trail.openMap(this.dom.trailHost, {
+            accepted: this.completed,
+            onPick: id => this._takeRoute(id),
+            onClose: () => this._closeTrail()
+        });
+    },
+
+    _closeTrail() {
+        this.dom.trail.classList.add('hidden');
+        this.dom.trailHost.innerHTML = '';
+        this.state = 'playing';
+        this._grabMouse();
+    },
+
+    _takeRoute(routeId) {
+        const r = Sahara.ROUTES.find(x => x.id === routeId);
+        if (!r || this.completed.includes(routeId)) return;
+        this.route = r;
+        this.quest = null;
+        this.dom.questBanner.innerHTML =
+            `<span class="dg-quest-label">Commission</span> ${Sahara.place(r.to).name} · ` +
+            `<span class="dg-quest-heading">${r.stops.length + 1} legs</span>`;
+        this.dom.questBanner.classList.remove('hidden');
+        this._closeTrail();
+        this._toast('Commission accepted. Ride out past the last cairn to begin.');
+    },
+
+    // Called the moment the player crosses the town boundary with a route.
+    _beginJourney() {
+        this.state = 'journey';
+        if (document.pointerLockElement === this.canvas) document.exitPointerLock();
+        this.dom.trail.classList.remove('hidden');
+        this.dom.timer.classList.add('hidden');
+        this.dom.nav.classList.add('hidden');
+        this.dom.vignette.style.opacity = 0;
+        Trail.start(this.dom.trailHost, this.route.id, {
+            water: this.water, waterMax: this.waterMax(),
+            food: this.food, cowries: this.cowries,
+            camels: this.hasCamel ? 2 : 1
+        }, res => this._journeyDone(res));
+    },
+
+    _journeyDone(res) {
+        this.dom.trail.classList.add('hidden');
+        this.dom.trailHost.innerHTML = '';
+        this.cowries = res.cowries + (res.reward || 0);
+        if (res.won) this.completed.push(res.routeId);
+        this.route = null;
+        this.dom.questBanner.classList.add('hidden');
+
+        // home again either way; a failed crossing costs the cargo, not the run
+        this.pos = { x: this.SPAWN.x, y: 0, z: this.SPAWN.z };
+        this.yaw = 0; this.pitch = -0.04;
+        this.outside = false; this.exposure = 0;
+        this.water = this.waterMax(); this.food = this.FOOD_MAX;
+        this.camelPos = { x: this.pos.x - 3, z: this.pos.z + 3 };
+        this._renderHUD(); this._renderMeters();
+
+        if (res.won && this.completed.length >= Sahara.ROUTES.length) { this._victory(); return; }
+        this.state = 'playing';
+        this._toast(res.won
+            ? `Home again, ${res.days} days older and ${res.reward} cowries richer.`
+            : 'What was left of the caravan straggles back to Timbuktu.');
+        this._grabMouse();
     },
 
     _acceptQuest(id) {
@@ -1770,6 +1856,7 @@ const DesertGame = {
         this.outside = dist > this.TOWN_RADIUS;
 
         if (this.outside) {
+            if (!wasOutside && this.route) { this._beginJourney(); return; }
             if (!wasOutside) {
                 this.exposure = 0;
                 this._toast(this.hasCamel

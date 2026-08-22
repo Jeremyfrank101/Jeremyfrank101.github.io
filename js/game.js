@@ -2,7 +2,7 @@
 // tab is opened, so three.js is never fetched for people who never play.
 
 const Game = {
-    SCRIPTS: ['js/vendor/three.min.js', 'js/desert.js'],
+    SCRIPTS: ['js/vendor/three.min.js', 'js/sahara.js', 'js/trail.js', 'js/desert.js'],
 
     loading: false,
     loaded: false,
