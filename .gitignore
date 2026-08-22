@@ -1,2 +1,5 @@
 .DS_Store
 Thumbs.db
+
+# rendered sprite work-in-progress; enable by copying into art/warriors/
+art/warriors/_build/
