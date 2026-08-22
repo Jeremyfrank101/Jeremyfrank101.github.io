@@ -124,19 +124,39 @@ correctly-formed atlas for an artist to paint over.
 
 **Status: the pipeline works, the art does not.** A figure built from Blender
 primitives is a mannequin and looks worse than the procedural renderer, so no
-manifest is committed and the build output is gitignored. Closing the gap needs
-real geometry — an AI-generated mesh (Rodin and Hunyuan3D are already wired into
-the installed blender-mcp addon, with a free-trial key button in its panel), a
-licensed model, or painted 2D. Next idea worth building regardless of where the
-art comes from: normal/AO/emissive passes from Blender so the engine lights
-sprites with its own `SUN` instead of relying on baked highlights.
+manifest is committed and the build output is gitignored.
+
+**Most promising route: PixelLab** (MCP registered at project scope). It solves
+the consistency problem the Blender attempt could not, and pixel art is far
+closer to the game's existing look than a smooth 3D render. Mapping notes:
+
+- `create_character` gives 4 or 8 *rotations* of one standing figure, 16–128 px,
+  `view: "side"` matching the duel framing. Poses come from
+  `create_character_state`, which applies an edit ("lunging with a spear")
+  across every rotation — so one base character plus five states covers the six
+  poses, and identity holds. Budget 2–5 minutes per generation, 6 per fighter.
+- **Resolution changes the compositing.** The 3× supersample in `drawWarrior`
+  exists because the figure is drawn with smooth curves. Real pixel art wants
+  `imageSmoothingEnabled = false` and integer scaling. A 128 px character is
+  close to the ~136 figure-unit height the game already uses, so the manifest
+  would carry `scale: 1` and the sprite path needs a nearest-neighbour branch.
+- `create_portrait_character` is the easy win for the 11 prelude portraits.
+- **Style risk worth checking early**: the backdrops are smooth gradients with
+  bloom, so hard-pixel characters may clash. Test one fighter in-scene before
+  committing to eleven.
+
+Also worth building regardless of where the art comes from: normal/AO/emissive
+passes from Blender so the engine lights sprites with its own `SUN` instead of
+relying on baked highlights.
 
 ## Environment
 
 Blender 5.2 LTS at `/Applications/Blender.app`, blender-mcp addon permanently
-enabled, MCP server registered (`uvx blender-mcp`) — **needs a Claude Code
-restart to appear as tools**; headless Blender works without it. `uv` and
-Pillow are installed. Homebrew, ImageMagick, `cwebp` and Node are **not**.
+enabled, MCP server registered at user scope (`uvx blender-mcp`); headless
+Blender works without the MCP. PixelLab MCP registered at project scope
+(`https://api.pixellab.ai/mcp`, docs at `/mcp/docs`). **Both need a Claude Code
+restart before their tools are callable.** `uv` and Pillow are installed.
+Homebrew, ImageMagick, `cwebp` and Node are **not**.
 
 ## Outstanding
 
