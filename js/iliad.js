@@ -78,74 +78,91 @@ const Iliad = {
             { name:'Iphition', epithet:'son of Otrynteus', book:'Book XX', hp:70, atk:15, def:10, spd:12, type:'might',
               palette:{ skin:'#b8834f', tunic:'#8a7a5c', armour:'#9aa3ad', trim:'#6f7986', cape:'#5a4a3a', crest:'#c0c8d2', shield:'#8a939e', metal:'#c3cad3' },
               moves:[{name:'Charge',type:'might',power:18,acc:92},{name:'Spear Thrust',type:'might',power:22,acc:85},{name:'Shield Push',type:'guile',power:12,acc:95,effect:'daze'}],
+              prelude:{ lead:"Achilles has come back to the fighting. Patroclus is dead in Hector's armour, and the man who stayed by his ships for nineteen books is on the plain again with a shield made by a god. The Trojans break in front of him. This one does not run.", about:"Son of Otrynteus and a mountain nymph, lord of Hyde under snowy Tmolus. Homer gives him a home and a father in the same breath that kills him \u2014 the poem does that for the men who die first." },
               line:'First of the Trojans to meet him at the ford.' },
             { name:'Aeneas', epithet:'son of Aphrodite', book:'Book XX', hp:92, atk:19, def:16, spd:14, type:'spirit',
               palette:{ skin:'#c58f5c', tunic:'#b7546a', armour:'#d9c07a', trim:'#f0dda0', cape:'#8e3450', crest:'#f2d9e0', shield:'#c9a86a', metal:'#dfe5ec' },
               moves:[{name:'Boulder Cast',type:'might',power:24,acc:82},{name:'Divine Blood',type:'spirit',power:20,acc:95,effect:'heal'},{name:'Ancestral Guard',type:'spirit',power:0,acc:100,effect:'guard'}],
+              prelude:{ lead:"Apollo puts it in his mind to stand. Aeneas has met Achilles before, on Ida, and ran; he knows what he is doing and does it anyway, trading genealogies across the space between them before either throws.", about:"Son of Anchises and Aphrodite, and the one man here the poem will not let die. Poseidon lifts him out of the fight himself, because it is fated that he survive and his line rule after." },
               line:'Fated to survive this war and found another city.' },
             { name:'Lycaon', epithet:'son of Priam, unransomed', book:'Book XXI', hp:64, atk:14, def:9, spd:18, type:'guile',
               palette:{ skin:'#c08a58', tunic:'#cfc3a0', armour:'#a98f5f', trim:'#c9b071', cape:'#6f5a3a', crest:'#ddd2ae', shield:'#a3854f', metal:'#c8cfd8' },
               moves:[{name:'Supplication',type:'guile',power:10,acc:100,effect:'daze'},{name:'Desperate Lunge',type:'might',power:26,acc:74},{name:'Flee Along the Bank',type:'guile',power:14,acc:96,effect:'evade'}],
+              prelude:{ lead:"Achilles has driven half of Troy into the Scamander. A young man climbs out of the water unarmed and clasps his knees \u2014 the same man Achilles captured once before and sold to Lemnos, ransomed home only twelve days ago.", about:"Son of Priam by Laothoe. His plea is the most famous in the poem, and the answer is Achilles' coldest line: Patroclus died, who was far better than you." },
               line:'He clasps the knees of the man who once sold him into slavery.' },
             { name:'Asteropaeus', epithet:'grandson of the river Axius', book:'Book XXI', hp:88, atk:20, def:13, spd:19, type:'guile',
               palette:{ skin:'#b98454', tunic:'#4f8a7a', armour:'#7fb0a2', trim:'#a8d2c6', cape:'#2f5c52', crest:'#cfe8e0', shield:'#6f9c90', metal:'#cdd6dd' },
               moves:[{name:'Two Spears at Once',type:'might',power:28,acc:82},{name:'River-Blood',type:'spirit',power:18,acc:95,effect:'heal'},{name:'Ambidextrous Feint',type:'guile',power:22,acc:90,effect:'expose'}],
+              prelude:{ lead:"The river is choked with bodies and something in it is angry. A Paeonian steps out of the current where the water runs deepest, and this one throws with both hands at once.", about:"Grandson of the river Axius, and the only ambidextrous spearman in the Iliad. He draws blood from Achilles \u2014 the only mortal in the poem to manage it." },
               line:'He throws with both hands at once. No other man in the poem can.' },
             { name:'Scamander', epithet:'the river, risen in anger', book:'Book XXI', hp:120, atk:22, def:20, spd:10, type:'spirit', divine:true,
               palette:{ skin:'#6fa8c0', tunic:'#3d7f9c', armour:'#5fa3bd', trim:'#9fd6e8', cape:'#255f7a', crest:'#bfe6f2', shield:'#4a8fa8', metal:'#a8d4e4' },
               moves:[{name:'Flood the Plain',type:'spirit',power:26,acc:90,effect:'daze'},{name:'Drowning Surge',type:'might',power:30,acc:82},{name:'Choked with Dead',type:'guile',power:20,acc:95,effect:'burn'}],
+              prelude:{ lead:"Too many dead in the water. The river itself rises, speaks, and comes after Achilles across the plain in a wall, and for once he runs.", about:"A god, not a man: the river that waters Troy. He is beaten only when Hephaestus sets the plain on fire and boils him back into his banks." },
               line:'The river itself rears up, clogged with the bodies he has thrown in.' },
             { name:'Agenor', epithet:'wearing Apollo\'s likeness', book:'Book XXI', hp:80, atk:18, def:14, spd:24, type:'guile',
               palette:{ skin:'#d7b071', tunic:'#e8d9a8', armour:'#f0d98a', trim:'#fff2c4', cape:'#c9a24a', crest:'#fff6d8', shield:'#e0c46a', metal:'#f2f6fa' },
               moves:[{name:'Divine Misdirection',type:'guile',power:22,acc:96,effect:'evade'},{name:'Far-Shot Arrow',type:'guile',power:24,acc:90},{name:'Phantom Retreat',type:'spirit',power:0,acc:100,effect:'guard'}],
+              prelude:{ lead:"Alone in front of the Scaean Gate, one Trojan decides to stand so the rest can get inside. Then Apollo takes his shape and leads Achilles a long way off across the plain, and by the time the trick is seen the gates are shut.", about:"Son of Antenor. His stand buys Troy an afternoon; the god who wears his face buys it an hour more." },
               line:'Apollo takes his shape and leads Achilles on a chase across the plain.' },
             { name:'Hector', epithet:'tamer of horses', book:'Book XXII', hp:130, atk:23, def:19, spd:17, type:'might', boss:true,
               palette:{ skin:'#c98b57', tunic:'#3f6fa8', armour:'#b9c2cc', trim:'#7f8b99', cape:'#2f4f86', crest:'#e0e6ee', shield:'#8fa3bd', metal:'#dde4ec' },
               moves:[{name:'Breaker of Ranks',type:'might',power:27,acc:95},{name:'Hurled Boulder',type:'might',power:34,acc:80,effect:'daze'},{name:'Wall of Ilium',type:'spirit',power:0,acc:100,effect:'guard'},{name:'Last Stand',type:'spirit',power:38,acc:85,effect:'rage'}],
+              prelude:{ lead:"The gates are shut and Hector is on the wrong side of them. His father begs from the wall, his mother bares her breast to him, and he stays. Three times around the city they run before Athena, wearing his brother's face, stops him.", about:"Breaker of horses, and the only thing between Troy and the sea. He is the best man in the poem and he knows he is going to lose." },
               line:'Three times around the walls he ran. Now he turns and sets his feet.' }
         ],
         hector: [
             { name:'Protesilaus', epithet:'first ashore, first to fall', book:'Book II', hp:66, atk:15, def:10, spd:16, type:'might',
               palette:{ skin:'#c08a58', tunic:'#b04a3a', armour:'#c9ccd2', trim:'#9aa0a8', cape:'#7a2f24', crest:'#e2e6ea', shield:'#a8adb5', metal:'#d2d8de' },
               moves:[{name:'Leap from the Ship',type:'might',power:20,acc:90},{name:'Doomed Courage',type:'spirit',power:22,acc:85,effect:'rage'},{name:'Sword Cut',type:'might',power:16,acc:96}],
+              prelude:{ lead:"The fleet is beached and nobody will jump. The prophecy says the first man ashore dies first. One man goes over the side anyway.", about:"Of Phylace, newly married with a house half built. Homer notes the wife left tearing her cheeks before he notes the killing." },
               line:'He knew the prophecy: the first man ashore dies. He jumped anyway.' },
             { name:'Ajax the Greater', epithet:'bulwark of the Achaeans', book:'Book VII', hp:118, atk:22, def:22, spd:9, type:'might',
               palette:{ skin:'#bf8a52', tunic:'#7f6a45', armour:'#8f7a4a', trim:'#c0a468', cape:'#5c4a2c', crest:'#d8c48a', shield:'#6f5c38', metal:'#c9cfd6' },
               moves:[{name:'Tower Shield',type:'spirit',power:0,acc:100,effect:'guard'},{name:'Seven-Hide Bash',type:'might',power:30,acc:85,effect:'daze'},{name:'Hurled Stone',type:'might',power:26,acc:84}],
+              prelude:{ lead:"Hector calls the whole Achaean line out, one man, any man. Nine come forward and the lot falls to Ajax. They fight until dark and the heralds part them.", about:"Bulwark of the Achaeans, a shield of seven ox-hides and bronze. The duel is a draw, and they exchange gifts at the end of it \u2014 sword for belt." },
               line:'His shield is seven ox-hides and a layer of bronze. The duel ends in gifts.' },
             { name:'Teucer', epithet:'the bowman behind the shield', book:'Book VIII', hp:74, atk:21, def:8, spd:23, type:'guile',
               palette:{ skin:'#c99259', tunic:'#5c8a4a', armour:'#7fa86a', trim:'#a8cc90', cape:'#3d6634', crest:'#c8e0b0', shield:'#6f9459', metal:'#cbd3da' },
               moves:[{name:'Arrow from Cover',type:'guile',power:26,acc:92},{name:'Rapid Volley',type:'guile',power:16,acc:100,effect:'burn'},{name:'Duck Behind Ajax',type:'guile',power:0,acc:100,effect:'guard'}],
+              prelude:{ lead:"From behind his brother's shield, an archer is picking the Trojan line apart one man at a time. Hector goes to find him with a stone.", about:"Half-brother to Ajax and the best bowman in the army. He shoots, then ducks back behind the shield like a child behind its mother \u2014 Homer's simile, not ours." },
               line:'He shoots, then hides behind his brother\'s shield like a child behind its mother.' },
             { name:'Patroclus', epithet:'in the armour of Achilles', book:'Book XVI', hp:112, atk:24, def:16, spd:20, type:'spirit',
               palette:{ skin:'#cf9a63', tunic:'#e8dcc0', armour:'#e6c15a', trim:'#f5e6a8', cape:'#b8452f', crest:'#f2e3b0', shield:'#d9b451', metal:'#cfd6dd' },
               moves:[{name:'Borrowed Glory',type:'spirit',power:28,acc:90,effect:'rage'},{name:'Rout the Trojans',type:'might',power:26,acc:92},{name:'Three Times He Charged',type:'might',power:34,acc:80,effect:'recoil'}],
+              prelude:{ lead:"He borrowed the armour to frighten the Trojans off the ships and was told to come straight back. He did not come straight back. Apollo strikes the helmet from his head at the wall, and then it is only a matter of who reaches him first.", about:"Achilles' companion, wearing Achilles' armour, and the death that brings Achilles back to the war. Killing him is the worst thing Hector ever does for Troy." },
               line:'Apollo strikes the helmet from his head before Hector ever reaches him.' },
             { name:'Achilles', epithet:'swift-footed, and grieving', book:'Book XXII', hp:135, atk:27, def:16, spd:24, type:'might', boss:true,
               palette:{ skin:'#d9a06b', tunic:'#e8dcc0', armour:'#e6c15a', trim:'#f5e6a8', cape:'#b8452f', crest:'#f2e3b0', shield:'#d9b451', metal:'#cfd6dd' },
               moves:[{name:'Pelian Ash Spear',type:'might',power:32,acc:95},{name:'Swift-Footed Rush',type:'guile',power:22,acc:100,effect:'first'},{name:'Wrath',type:'might',power:46,acc:78,effect:'recoil'},{name:'Grief for Patroclus',type:'spirit',power:30,acc:90,effect:'rage'}],
+              prelude:{ lead:"He has run three times around his own city and stopped running. Athena has just tricked him into standing. He asks for a pact over the body and is refused.", about:"Swift-footed, son of a goddess, in armour a god made. He has been waiting the whole poem for this and it takes him one throw." },
               line:'He has not eaten. He has not slept. He is not quite a man any more.' }
         ],
         diomedes: [
             { name:'Pandarus', epithet:'who broke the truce', book:'Book V', hp:72, atk:18, def:9, spd:21, type:'guile',
               palette:{ skin:'#c08a58', tunic:'#8a6a9c', armour:'#a888bd', trim:'#c8a8d8', cape:'#5c3f70', crest:'#dcc8e8', shield:'#96769f', metal:'#cbd3da' },
               moves:[{name:'Oathbreaker\'s Arrow',type:'guile',power:24,acc:92},{name:'Aimed at the Belt',type:'guile',power:28,acc:80},{name:'Boast',type:'spirit',power:12,acc:100,effect:'rage'}],
+              prelude:{ lead:"The truce is holding. Athena talks a Trojan archer into breaking it with one arrow at Menelaus, and the war that could have ended in a duel starts again in earnest.", about:"The archer who broke the oath. Diomedes finds him in the press later and puts a spear through his mouth." },
               line:'His arrow broke the truce and began the killing again.' },
             { name:'Aeneas', epithet:'son of Aphrodite', book:'Book V', hp:94, atk:19, def:17, spd:14, type:'spirit',
               palette:{ skin:'#c58f5c', tunic:'#b7546a', armour:'#d9c07a', trim:'#f0dda0', cape:'#8e3450', crest:'#f2d9e0', shield:'#c9a86a', metal:'#dfe5ec' },
               moves:[{name:'Stand Over the Body',type:'spirit',power:0,acc:100,effect:'guard'},{name:'Spear of Anchises',type:'might',power:24,acc:90},{name:'Divine Blood',type:'spirit',power:20,acc:95,effect:'heal'}],
+              prelude:{ lead:"Apollo puts it in his mind to stand. Aeneas has met Achilles before, on Ida, and ran; he knows what he is doing and does it anyway, trading genealogies across the space between them before either throws.", about:"Son of Anchises and Aphrodite, and the one man here the poem will not let die. Poseidon lifts him out of the fight himself, because it is fated that he survive and his line rule after." },
               line:'Diomedes crushes his hip with a stone two living men could not carry.' },
             { name:'Aphrodite', epithet:'laughter-loving, out of her element', book:'Book V', hp:78, atk:14, def:12, spd:26, type:'spirit', divine:true,
               palette:{ skin:'#f0c8a8', tunic:'#f2a8c0', armour:'#f8d0e0', trim:'#fff0f6', cape:'#e07fa8', crest:'#fff4f8', shield:'#f2bcd2', metal:'#ffe8f0' },
               moves:[{name:'Rescue Her Son',type:'guile',power:0,acc:100,effect:'evade'},{name:'Girdle of Desire',type:'spirit',power:22,acc:95,effect:'daze'},{name:'Immortal Ichor',type:'spirit',power:16,acc:100,effect:'heal'}],
+              prelude:{ lead:"Athena has taken the mist from Diomedes' eyes so he can tell god from man, and told him to leave the gods alone \u2014 except one. Aeneas goes down; his mother comes to carry him off the field.", about:"The goddess of love, out of her element and bleeding ichor from the wrist. She goes home to Olympus crying and is told by her own mother to stay away from wars." },
               line:'She is the goddess of love and has no business here. He cuts her wrist.' },
             { name:'Apollo', epithet:'the Far-Shooter', book:'Book V', hp:118, atk:24, def:20, spd:22, type:'guile', divine:true,
               palette:{ skin:'#f2d9a8', tunic:'#f0e2b0', armour:'#f8e08a', trim:'#fff8d0', cape:'#d9a83a', crest:'#fff6d8', shield:'#e8c860', metal:'#fff2c8' },
               moves:[{name:'Silver Bow',type:'guile',power:28,acc:92},{name:'Beware, Son of Tydeus',type:'spirit',power:26,acc:95,effect:'daze'},{name:'Divine Rebuke',type:'spirit',power:32,acc:85}],
+              prelude:{ lead:"Diomedes has the wounded Aeneas at his mercy and lunges a fourth time at the god shielding him. A voice tells him to think, mortal, and give way.", about:"The Far-Shooter, and the god most against the Achaeans. Even Diomedes, with his sight cleared, is not allowed this one." },
               line:'"Think, son of Tydeus, and give way. Never match yourself against gods."' },
             { name:'Ares', epithet:'the bane of mortals', book:'Book V', hp:140, atk:27, def:18, spd:16, type:'might', divine:true, boss:true,
               palette:{ skin:'#c07a5a', tunic:'#8a2f2f', armour:'#a83a3a', trim:'#d95c4a', cape:'#5c1f1f', crest:'#f0806a', shield:'#8f2f2f', metal:'#d8dee6' },
               moves:[{name:'Brazen Spear',type:'might',power:32,acc:90},{name:'Shout of Ten Thousand',type:'spirit',power:28,acc:95,effect:'daze'},{name:'War Incarnate',type:'might',power:40,acc:80,effect:'rage'},{name:'Immortal Recovery',type:'spirit',power:0,acc:100,effect:'heal'}],
+              prelude:{ lead:"Athena climbs into the chariot beside him, takes the reins herself, and puts the cap of Hades on so the war-god cannot see who is driving. Then she guides the spear.", about:"The war-god, fighting for Troy. He takes the wound in the belly and bellows like ten thousand men, and Zeus tells him he is the most hateful of all the gods on Olympus." },
               line:'Athena leans on the spear beside him. The war god screams like ten thousand men.' }
         ]
     },
@@ -245,7 +262,9 @@ const Iliad = {
         this.favour = this.hero.favourStart || 0;
         this.turnCount = 0;
         this.busy = false;
-        this.scene = 'battle';
+        // The duel is preceded by what led to it. This is the part of the
+        // Iliad that makes the fight mean anything.
+        this.scene = src.prelude ? 'prelude' : 'battle';
         this.turn = 'hero';
         this.heroPose = 'ready';
         this.foePose = 'ready';
@@ -482,6 +501,7 @@ const Iliad = {
         if (!this.dom) return;
         const f = {
             select: () => this.uiSelect(),
+            prelude:() => this.uiPrelude(),
             battle: () => this.uiBattle(),
             boon:   () => this.uiBoon(),
             over:   () => this.uiOver(),
@@ -490,6 +510,7 @@ const Iliad = {
         this.dom.ui.innerHTML = f ? f() : '';
         // Menus want the full width; a battle wants the split layout.
         this.dom.root.classList.toggle('il-menu', this.scene !== 'battle');
+        this.dom.root.classList.toggle('il-reading', this.scene === 'prelude');
         this._fitW = null;   // force a re-measure, the box just changed
         this.bindUI();
     },
@@ -510,6 +531,47 @@ const Iliad = {
             </div>
             <button class="il-btn il-ghost" data-scene="board">View the Leaderboard</button>
         </div>`;
+    },
+
+    // ---------- before the duel ----------
+
+    uiPrelude() {
+        const f = this.foe, p = f.prelude || {};
+        const n = this.stage + 1, of = this.GAUNTLET[this.hero.id].length;
+        return `<div class="il-panel il-prelude">
+            <div class="il-pre-kicker">${this.esc(f.book)} · duel ${n} of ${of}</div>
+            <h2>${this.esc(f.name)}</h2>
+            <p class="il-sub">${this.esc(f.epithet)}</p>
+            <p class="il-pre-lead">${this.esc(p.lead || f.line)}</p>
+            <div class="il-pre-about">
+                <span class="il-pre-label">Who he is</span>
+                <p>${this.esc(p.about || '')}</p>
+            </div>
+            <div class="il-pre-stats">
+                <span class="il-tag il-${f.type}">${this.TYPES[f.type].name}</span>
+                <span>${f.hp} HP</span><span>${f.atk} atk</span><span>${f.def} def</span><span>${f.spd} spd</span>
+                ${f.divine ? '<span class="il-tag il-divine">a god</span>' : ''}
+                ${f.boss ? '<span class="il-tag il-divine">the last</span>' : ''}
+            </div>
+            <button class="il-btn il-primary" data-fight>Take up the spear</button>
+        </div>`;
+    },
+
+    // The scene behind the prelude: the two of them, in silhouette, on the
+    // ground they are about to fight over. Drawn by the same renderer as the
+    // battle, so it is the actual pair rather than stock art.
+    _drawPrelude(ctx, t) {
+        this.drawBackground(ctx, t);
+        const MF = this.MARKS.foe, MH = this.MARKS.hero;
+        this.drawWarrior(ctx, this.foe.palette, 'ready', -1, MF.x, MF.y, t, 'foe',
+            { scale: MF.scale, id: this.foe.name });
+        this.drawWarrior(ctx, this.hero.palette, 'ready', 1, MH.x, MH.y, t, 'hero',
+            { scale: MH.scale, id: this.hero.name });
+        // push it back so the words carry
+        const g = ctx.createLinearGradient(0, 0, 0, this.H);
+        g.addColorStop(0, 'rgba(18,10,24,0.55)');
+        g.addColorStop(1, 'rgba(18,10,24,0.25)');
+        ctx.fillStyle = g; ctx.fillRect(0, 0, this.W, this.H);
     },
 
     uiBattle() {
@@ -605,6 +667,10 @@ const Iliad = {
     bindUI() {
         const q = s => this.container.querySelectorAll(s);
         q('[data-hero]').forEach(b => b.addEventListener('click', () => this.startRun(b.dataset.hero)));
+        q('[data-fight]').forEach(b => b.addEventListener('click', () => {
+            this.scene = 'battle';
+            this.renderUI();
+        }));
         q('[data-move]').forEach(b => b.addEventListener('click', () => this.useMove(+b.dataset.move)));
         q('[data-ult]').forEach(b => b.addEventListener('click', () => this.useUltimate()));
         q('[data-boon]').forEach(b => b.addEventListener('click', () => this.takeBoon(b.dataset.boon)));
@@ -632,6 +698,8 @@ const Iliad = {
     // pass that only bright pixels survive.
 
     HORIZON: 186,            // where the ground plane meets the sky
+    SS: 3,                   // sprite supersampling: 3x the pixels, then down
+    TURN: 0.76,              // horizontal squash of a body turned side-on
     SUN: [548, 58],          // key light; everything else is lit to agree with it
 
     POSES: {
@@ -864,11 +932,13 @@ const Iliad = {
         // brow shadow, then the eye slots with one catchlight so there is
         // somebody inside the bronze
         b.fillStyle = 'rgba(18,10,24,0.5)'; b.fillRect(-6, cy + 2, 12, 2);
+        // Turned side-on, the far eye slot is all but hidden and the near one
+        // does the looking. Two equal eyes is what made the figure stare out
+        // of the screen instead of at the man opposite.
         b.fillStyle = '#120c18';
-        b.fillRect(-5, cy + 4, 3.2, 2.6);
-        b.fillRect(1.8, cy + 4, 3.2, 2.6);
-        b.fillStyle = 'rgba(255,236,190,0.7)';  b.fillRect(3.6, cy + 4, 1, 1);
-        b.fillStyle = 'rgba(255,236,190,0.38)'; b.fillRect(-3.2, cy + 4, 1, 1);
+        b.fillRect(2.2, cy + 4, 3.6, 2.8);
+        b.globalAlpha = 0.45; b.fillRect(-4.4, cy + 4, 2.4, 2.6); b.globalAlpha = 1;
+        b.fillStyle = 'rgba(255,236,190,0.8)'; b.fillRect(4.4, cy + 4, 1.2, 1.2);
 
         // dome highlight and the trim band the crest is socketed into
         b.fillStyle = A.li2;
@@ -883,7 +953,7 @@ const Iliad = {
     // Horsehair crest: an arcing plume rooted on the dome, drawn as a solid
     // banded shape with strands combed over it. Drawing it as strands alone
     // just filled in to a slab; the shape has to come first, texture second.
-    _crest(b, pal, cy, t, lagX) {
+    _crest(b, pal, cy, t, lagX, len = 1) {
         // Horsehair was dyed, so the plume takes its colour from the fighter's
         // cloak rather than staying the pale bone of the helmet trim — which
         // also stops it washing out to white under the rim light.
@@ -892,7 +962,7 @@ const Iliad = {
         // spine of the plume: brow -> up over the dome -> down past the nape
         const pt = u => {
             const x = 7 - u * 27 + sway * u * u;
-            const y = cy - 8 - Math.sin(Math.min(1, u * 0.94) * Math.PI * 0.98) * 25 + u * u * 16;
+            const y = cy - 8 - Math.sin(Math.min(1, u * 0.94) * Math.PI * 0.98) * 25 * len + u * u * 16;
             return [x, y];
         };
         const thick = u => 4 + Math.sin(Math.min(1, u * 1.15) * Math.PI) * 8;
@@ -1043,6 +1113,31 @@ const Iliad = {
         return st;
     },
 
+    // A stable set of proportions per fighter. Derived from the name so it
+    // never changes between runs, and nudged by hand for the ones Homer
+    // actually describes: Ajax huge, Teucer slight, Tydeus's son thickset.
+    BUILDS: {
+        'Ajax the Greater': { h: 1.10, w: 1.18, crest: 1.15 },
+        'Achilles':         { h: 1.06, w: 1.00, crest: 1.30 },
+        'Hector':           { h: 1.03, w: 1.08, crest: 1.10 },
+        'Diomedes':         { h: 0.98, w: 1.12, crest: 0.95 },
+        'Teucer':           { h: 0.95, w: 0.88, crest: 0.70 },
+        'Lycaon':           { h: 0.92, w: 0.86, crest: 0.60 },
+        'Patroclus':        { h: 1.04, w: 1.00, crest: 1.25 },
+        'Scamander':        { h: 1.14, w: 1.22, crest: 1.40 },
+        'Ares':             { h: 1.12, w: 1.20, crest: 1.35 },
+        'Apollo':           { h: 1.05, w: 0.94, crest: 1.20 },
+        'Aphrodite':        { h: 0.94, w: 0.84, crest: 1.05 }
+    },
+
+    _build(id) {
+        if (this.BUILDS[id]) return this.BUILDS[id];
+        let h = 0;
+        for (const ch of String(id || 'x')) h = (h * 31 + ch.charCodeAt(0)) | 0;
+        const n = Math.abs(h);
+        return { h: 0.94 + (n % 13) / 100, w: 0.92 + (n % 17) / 90, crest: 0.8 + (n % 11) / 22 };
+    },
+
     drawWarrior(ctx, pal, poseName, facing, cx, groundY, t, key, opts = {}) {
         const P = key ? this._advancePose(key, poseName, this._dt || 0.016)
                       : { ...(this.POSES[poseName] || this.POSES.ready), capeX: 0, crestX: 0 };
@@ -1053,7 +1148,12 @@ const Iliad = {
         // Sized to the measured union of every settled pose, plus room for the
         // outline dilation. The fallen pose reaches 156 left of the feet and 49
         // below them; the raised spear of `win` reaches 185 above.
-        const BW = 250, BH = 248, ox = 160, oy = 190;
+        // Drawn at triple resolution and composited down. Every coordinate
+        // below is still in figure units; SS only changes how many device
+        // pixels each of those units gets, which is what turns a blocky
+        // silhouette into something with actual modelling in it.
+        const SS = this.SS;
+        const BW = 250 * SS, BH = 248 * SS, ox = 160, oy = 190;
         if (!this._buf) {
             const mk = () => {
                 const c = document.createElement('canvas');
@@ -1067,21 +1167,31 @@ const Iliad = {
         }
         const b = this._bufCtx;
         b.clearRect(0, 0, BW, BH);
-        b.imageSmoothingEnabled = false;
+        b.imageSmoothingEnabled = true;
         b.save();
+        b.scale(SS, SS);
         b.translate(ox, oy);
 
         const fallen = poseName === 'fallen';
         if (fallen) { b.rotate(-P.lean); b.translate(-10, 10); }
         else b.rotate(P.lean * 0.12);
 
+        // Turn to a three-quarter stance facing the enemy. Squaring up to the
+        // camera made two men ignore each other across a battlefield; a
+        // shoulders-in figure with the far limbs set back reads as a duel.
+        // Everything after this is drawn in the turned frame.
+        if (!fallen) b.scale(this.TURN * this._build(id).w, 1);
+
         // Proportions, ground at y=0. A heroic figure is about seven and a
         // half heads tall; the first pass here was three and a half, which is
         // why it read as a toy. Every landmark below is derived from that.
+        // Build varies by who this is, so the silhouettes differ before any
+        // colour does: Ajax is a wall, Teucer is a bowman, Achilles is tall.
+        const B = this._build(id);
         const breathe = Math.sin(t * 2.4) * P.bob * 0.8;
-        const hipY = -68 + breathe;
-        const shoulderY = -110 + breathe;
-        const headY = -128 + breathe;          // top of the skull
+        const hipY = (-68 * B.h) + breathe;
+        const shoulderY = (-110 * B.h) + breathe;
+        const headY = (-128 * B.h) + breathe;  // top of the skull
         const swing = P.capeX * 18;
 
         // ---- cape, behind everything ----
@@ -1125,9 +1235,14 @@ const Iliad = {
         b.closePath(); b.fill();
 
         // ---- legs ----
-        const legLen = 60 - P.knee;
-        this._limb(b, -8, hipY, 11, legLen, 0.09 + P.knee * 0.03, pal.skin);
-        this._limb(b,  8, hipY, 11, legLen, -0.12 - P.knee * 0.02, pal.skin);
+        // Legs run from the hip to the top of the foot, so a bent knee shortens
+        // the stride rather than lifting the fighter off the ground.
+        const legLen = (-5) - hipY - P.knee * 0.35;
+        // far leg first, set back and in shadow; near leg over it
+        b.save(); b.globalAlpha = 0.82;
+        this._limb(b, -11, hipY, 10, legLen - 1, 0.16 + P.knee * 0.03, this._mix(pal.skin, '#2a1c14', 0.3));
+        b.restore();
+        this._limb(b,  6, hipY, 11, legLen, -0.10 - P.knee * 0.02, pal.skin);
         // knee highlights
         const skinR = this.ramp(pal.skin);
         b.fillStyle = skinR.li1;
@@ -1139,15 +1254,21 @@ const Iliad = {
         this._slab(b, -14, hipY + legLen - 30, 11, 25, greave, { top: true });
         this._slab(b,   4, hipY + legLen - 30, 11, 25, greave, { top: true });
         // sandals
+        // The sole sits exactly on y = 0, which is the ground. It used to stop
+        // five units short, and with the contact shadow drawn at +1 the whole
+        // figure read as hovering an inch above the plain.
         const sole = this.ramp('#5a4028');
-        b.fillStyle = sole.base; b.fillRect(-15, hipY + legLen - 3, 14, 4);
-        b.fillStyle = sole.base; b.fillRect(3, hipY + legLen - 3, 14, 4);
-        b.fillStyle = sole.sh2;  b.fillRect(-15, hipY + legLen + 1, 14, 1.5);
-        b.fillStyle = sole.sh2;  b.fillRect(3, hipY + legLen + 1, 14, 1.5);
+        const footTop = -5, footH = 5;
+        b.fillStyle = sole.base; b.fillRect(-15, footTop, 14, footH);
+        b.fillStyle = sole.base; b.fillRect(3, footTop, 14, footH);
+        b.fillStyle = sole.sh2;  b.fillRect(-15, footTop + footH - 1.5, 14, 1.5);
+        b.fillStyle = sole.sh2;  b.fillRect(3, footTop + footH - 1.5, 14, 1.5);
 
         // ---- skirt, back arm, body ----
         this._pteruges(b, pal, hipY, t, swing);
-        this._limb(b, -12, shoulderY + 9, 9, 34, P.armB, pal.skin);
+        b.save(); b.globalAlpha = 0.85;
+        this._limb(b, -14, shoulderY + 9, 8, 34, P.armB + 0.12, this._mix(pal.skin, '#2a1c14', 0.28));
+        b.restore();
         this._cuirass(b, pal, shoulderY, hipY);
 
         // shoulder guards, sitting on the ends of the collar
@@ -1157,10 +1278,12 @@ const Iliad = {
         // ---- neck and head ----
         b.fillStyle = skinR.sh2; b.fillRect(-4, shoulderY - 6, 8, 8);       // neck
         b.fillStyle = skinR.sh1; b.fillRect(-3, shoulderY - 6, 6, 8);
-        b.fillStyle = skinR.sh2;  b.fillRect(-7, headY, 14, 20);
-        b.fillStyle = skinR.sh1;  b.fillRect(-6, headY, 12, 19);
-        b.fillStyle = skinR.base; b.fillRect(-5, headY + 1, 10, 18);
-        b.fillStyle = skinR.li1;  b.fillRect(2, headY + 3, 2.5, 9);
+        // the skull sits forward of the neck on a turned figure
+        b.fillStyle = skinR.sh2;  b.fillRect(-5, headY, 14, 20);
+        b.fillStyle = skinR.sh1;  b.fillRect(-4, headY, 12, 19);
+        b.fillStyle = skinR.base; b.fillRect(-3, headY + 1, 10, 18);
+        b.fillStyle = skinR.li1;  b.fillRect(4, headY + 3, 2.5, 9);
+        b.fillStyle = skinR.li2;  b.fillRect(7, headY + 5, 1.6, 6);   // brow ridge, leading edge
         b.fillStyle = skinR.sh2;  b.fillRect(-7, headY + 15, 14, 3);        // jaw shadow
         // beard
         const beard = this.ramp(this._mix(pal.crest, '#3b2a1e', 0.6));
@@ -1210,7 +1333,7 @@ const Iliad = {
         b.restore();
         fist(handX, handY);
 
-        this._crest(b, pal, helmY, t, P.crestX);
+        this._crest(b, pal, helmY, t, P.crestX, this._build(id).crest);
         b.restore();
 
         // ---- rim light ----
@@ -1221,7 +1344,7 @@ const Iliad = {
         r.globalCompositeOperation = 'source-over';
         r.drawImage(this._buf, 0, 0);
         r.globalCompositeOperation = 'destination-out';
-        r.drawImage(this._buf, -2, 2);               // key from upper right
+        r.drawImage(this._buf, -2 * SS, 2 * SS);     // key from upper right
         r.globalCompositeOperation = 'source-in';
         r.fillStyle = opts.rim || 'rgba(255,238,198,0.55)';
         r.fillRect(0, 0, BW, BH);
@@ -1233,7 +1356,7 @@ const Iliad = {
         bc.globalCompositeOperation = 'source-over';
         bc.drawImage(this._buf, 0, 0);
         bc.globalCompositeOperation = 'destination-out';
-        bc.drawImage(this._buf, 2.6, -1);
+        bc.drawImage(this._buf, 2.6 * SS, -1 * SS);
         bc.globalCompositeOperation = 'source-in';
         bc.fillStyle = opts.bounce || 'rgba(120,160,220,0.3)';
         bc.fillRect(0, 0, BW, BH);
@@ -1246,7 +1369,7 @@ const Iliad = {
         oc.clearRect(0, 0, BW, BH);
         oc.globalCompositeOperation = 'source-over';
         for (const [dx, dy] of [[-2,0],[2,0],[0,-2],[0,2],[-1,-1],[1,1],[1,-1],[-1,1]]) {
-            oc.drawImage(this._buf, dx, dy);
+            oc.drawImage(this._buf, dx * SS, dy * SS);
         }
         oc.globalCompositeOperation = 'source-in';
         oc.fillStyle = 'rgba(26,16,30,0.78)';
@@ -1267,16 +1390,20 @@ const Iliad = {
 
         if (opts.reflect) this._reflect(ctx, ox, oy, BW, BH, t);
 
-        ctx.drawImage(this._outline, -ox, -oy);
-        ctx.drawImage(this._buf, -ox, -oy);
-        ctx.drawImage(this._bounce, -ox, -oy);
-        ctx.drawImage(this._rim, -ox, -oy);
+        const sm = ctx.imageSmoothingEnabled;
+        ctx.imageSmoothingEnabled = true;      // downsampling 3x is the point
+        const dw = BW / SS, dh = BH / SS;
+        ctx.drawImage(this._outline, 0, 0, BW, BH, -ox, -oy, dw, dh);
+        ctx.drawImage(this._buf,     0, 0, BW, BH, -ox, -oy, dw, dh);
+        ctx.drawImage(this._bounce,  0, 0, BW, BH, -ox, -oy, dw, dh);
+        ctx.drawImage(this._rim,     0, 0, BW, BH, -ox, -oy, dw, dh);
+        ctx.imageSmoothingEnabled = sm;
 
         // atmospheric haze for anything standing far back
         if (opts.haze) {
             ctx.globalCompositeOperation = 'source-atop';
             ctx.fillStyle = opts.haze;
-            ctx.fillRect(-ox, -oy, BW, BH);
+            ctx.fillRect(-ox, -oy, BW / SS, BH / SS);
             ctx.globalCompositeOperation = 'source-over';
         }
         ctx.restore();
@@ -1933,6 +2060,14 @@ const Iliad = {
         const ctx = this.ctx, t = this._t;
         ctx.imageSmoothingEnabled = false;
         this._stepParticles(this._dt || 0.016);
+
+        if (this.scene === 'prelude' && this.foe && this.hero) {
+            this._stepParticles(this._dt || 0.016);
+            this._drawPrelude(ctx, t);
+            this._drawParticles(ctx);
+            this._post(ctx);
+            return;
+        }
 
         if (this.scene !== 'battle' && this.scene !== 'boon') {
             // A quiet dusk plain behind the menus, using the same sky machinery
